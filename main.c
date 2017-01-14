@@ -104,43 +104,10 @@ int main() {
         set = !set;
         delay();
 
-        uint16_to_hex(GPIOD->IDR, buf);
-        puts("GPIOD in: ");
-        puts(buf);
-
-        uint16_to_hex(TIM2->CNT, buf);
-        puts("TIM2 CNT: ");
-        puts(buf);
-
         uint16_to_hex(ls_freq_read(), buf);
-        puts("TIM3 CCR1: ");
+        puts("f = ");
         puts(buf);
 
-        uint16_to_hex(TIM3->CNT, buf);
-        puts("TIM3 CNT: ");
-        puts(buf);
-
-        /* uint32_to_hex(TIM3->SR, buf); */
-        /* puts("TIM3 SR: "); */
-        /* puts(buf); */
-
-        /* const uint16_t ccr1 = TIM3->CCR1; */
-        /* const uint16_t ccr2 = TIM3->CCR2; */
-        /* uint32_to_hex(ccr1, buf); */
-        /* puts("TIM3 CCR1: "); */
-        /* puts(buf); */
-
-        /* uint32_to_hex(ccr2, buf); */
-        /* puts("TIM3 CCR2: "); */
-        /* puts(buf); */
-
-        /* uint32_to_hex(TIM2->CNT, buf); */
-        /* puts("TIM2 CNT: "); */
-        /* puts(buf); */
-
-        /* uint32_to_hex(TIM3->CNT, buf); */
-        /* puts("TIM3 CNT: "); */
-        /* puts(buf); */
         /* USART2->DR = 'x'; */
     }
 
