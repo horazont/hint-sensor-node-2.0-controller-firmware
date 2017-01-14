@@ -12,6 +12,7 @@ CPFLAGS = -Obinary
 ODFLAGS = -S
 
 c_sources = $(wildcard *.c)
+headers = $(wildcard *.h)
 objs = $(patsubst %.c,%.o,$(c_sources))
 
 startup_file_src = startup_stm32f10x_md.s
@@ -39,7 +40,7 @@ main.elf: $(objs) $(startup_file_obj) stm32_flash.ld $(SPL_LIB) $(system_obj)
 # main.elf: $(objs) $(startup_file_obj) stm32_flash.ld $(SPL_LIB) $(system_obj)
 # 	$(CC) $(CFLAGS) -Wl,-v -Wl,-Tstm32_flash.ld -L/usr/lib/arm-none-eabi/newlib/libc.a -Wl,-nostartfiles -Wl,--gc-sections -o main.elf $(startup_file_obj) $(objs) $(SPL_LIB) $(system_obj)
 
-$(objs): %.o: %.c
+$(objs): %.o: %.c $(headers)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(startup_file_obj): %.o: %.s

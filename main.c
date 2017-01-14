@@ -3,7 +3,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "stm32f10x.h"
+#include <stm32f10x.h>
+
+#include "lightsensor_freq.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
@@ -29,6 +31,16 @@ void uint32_to_hex(const uint32_t value, char *buf)
     }
 }
 
+void uint16_to_hex(const uint16_t value, char *buf)
+{
+    uint16_t shift = 12;
+    for (uint_fast8_t i = 0; i < 4; ++i) {
+        const uint8_t nybble = (value >> shift) & 0xF;
+        buf[i] = nybble_to_hex(nybble);
+        shift -= 4;
+    }
+}
+
 
 void delay() {
     for (uint32_t i = 0; i < 800000; ++i) {
@@ -40,7 +52,7 @@ static const char hello_world[] = "Hello World!";
 
 
 int main() {
-    RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST;
+    RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST | RCC_APB1RSTR_TIM4RST;
     RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST;
 
     delay();
@@ -59,40 +71,28 @@ int main() {
         | GPIO_CRL_CNF7_0;
     GPIOA->BSRR = GPIO_BSRR_BR5;
 
+    GPIOD->CRL =
+        GPIO_CRL_CNF0_0
+        | GPIO_CRL_CNF1_0
+        | GPIO_CRL_CNF2_0
+        | GPIO_CRL_CNF3_0
+        | GPIO_CRL_CNF4_0
+        | GPIO_CRL_CNF5_0
+        | GPIO_CRL_CNF6_0
+        | GPIO_CRL_CNF7_0;
+
     USART2->BRR = 312;
     USART2->CR1 = USART_CR1_UE | USART_CR1_TE;
 
-    char buf[10];
-    buf[9] = 0;
-    buf[8] = '\n';
+    char buf[6];
+    buf[5] = 0;
+    buf[4] = '\n';
 
-    TIM2->CR1 = 0;
-    TIM2->CR2 = 0;
-    TIM2->SMCR =
-        TIM_SMCR_TS_1  // ITR2 (== TIM3)
-        | TIM_SMCR_MSM
-        | TIM_SMCR_SMS_0 | TIM_SMCR_SMS_1 | TIM_SMCR_SMS_2  // External Clock Mode 1
-        ;
-
-    TIM3->CR1 = TIM_CR1_URS;
-    TIM3->CR2 = TIM_CR2_MMS_1;
-    TIM3->SR = 0;
-    TIM3->PSC = 23;
-    TIM3->DIER = 0;
-    TIM3->CCMR1 = TIM_CCMR1_CC1S_0 | TIM_CCMR1_CC2S_1;
-    TIM3->CCMR2 = 0;
-    TIM3->CCER = TIM_CCER_CC2P;
-    TIM3->SMCR = 0
-        | TIM_SMCR_MSM
-        | TIM_SMCR_TS_0 | TIM_SMCR_TS_2
-        | TIM_SMCR_SMS_2;
-    TIM3->CCER |= TIM_CCER_CC1E | TIM_CCER_CC2E;
-
-    TIM3->CR1 |= TIM_CR1_CEN;
-    TIM2->CR1 |= TIM_CR1_CEN;
+    ls_freq_init();
+    ls_freq_enable();
 
     RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPCEN | RCC_APB2ENR_IOPDEN | RCC_APB2ENR_IOPEEN;
-    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN | RCC_APB1ENR_USART2EN | RCC_APB1ENR_TIM2EN;
+    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN | RCC_APB1ENR_USART2EN | RCC_APB1ENR_TIM2EN | RCC_APB1ENR_TIM4EN;
 
     bool set = true;
     while (1) {
@@ -104,13 +104,25 @@ int main() {
         set = !set;
         delay();
 
-        uint32_to_hex(TIM3->CR1, buf);
-        puts("TIM3 CR1: ");
+        uint16_to_hex(GPIOD->IDR, buf);
+        puts("GPIOD in: ");
         puts(buf);
 
-        uint32_to_hex(TIM3->SR, buf);
-        puts("TIM3 SR: ");
+        uint16_to_hex(TIM2->CNT, buf);
+        puts("TIM2 CNT: ");
         puts(buf);
+
+        uint16_to_hex(ls_freq_read(), buf);
+        puts("TIM3 CCR1: ");
+        puts(buf);
+
+        uint16_to_hex(TIM3->CNT, buf);
+        puts("TIM3 CNT: ");
+        puts(buf);
+
+        /* uint32_to_hex(TIM3->SR, buf); */
+        /* puts("TIM3 SR: "); */
+        /* puts(buf); */
 
         /* const uint16_t ccr1 = TIM3->CCR1; */
         /* const uint16_t ccr2 = TIM3->CCR2; */
@@ -122,13 +134,13 @@ int main() {
         /* puts("TIM3 CCR2: "); */
         /* puts(buf); */
 
-        uint32_to_hex(TIM2->CNT, buf);
-        puts("TIM2 CNT: ");
-        puts(buf);
+        /* uint32_to_hex(TIM2->CNT, buf); */
+        /* puts("TIM2 CNT: "); */
+        /* puts(buf); */
 
-        uint32_to_hex(TIM3->CNT, buf);
-        puts("TIM3 CNT: ");
-        puts(buf);
+        /* uint32_to_hex(TIM3->CNT, buf); */
+        /* puts("TIM3 CNT: "); */
+        /* puts(buf); */
         /* USART2->DR = 'x'; */
     }
 
