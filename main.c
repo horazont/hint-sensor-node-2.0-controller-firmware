@@ -5,119 +5,18 @@
 
 #include <stm32f10x.h>
 
-#include "lightsensor_freq.h"
-#include "stm32f10x_i2c.h"
+#include "i2clib.h"
+#include "utils.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
-static volatile uint8_t recvd_byte = 0xff;
-static volatile uint8_t bus_addr = 0x1d;
-static volatile uint8_t sub_addr = 0x0f;
-
 int main();
-
-char nybble_to_hex(const uint8_t nybble)
-{
-    const uint8_t safe_nybble = nybble & 0xF;
-    if (safe_nybble >= 0xa) {
-        return 87 + safe_nybble;
-    } else {
-        return 48 + safe_nybble;
-    }
-}
-
-void uint32_to_hex(const uint32_t value, char *buf)
-{
-    uint32_t shift = 28;
-    for (uint_fast8_t i = 0; i < 8; ++i) {
-        const uint8_t nybble = (value >> shift) & 0xF;
-        buf[i] = nybble_to_hex(nybble);
-        shift -= 4;
-    }
-}
-
-void uint16_to_hex(const uint16_t value, char *buf)
-{
-    uint16_t shift = 12;
-    for (uint_fast8_t i = 0; i < 4; ++i) {
-        const uint8_t nybble = (value >> shift) & 0xF;
-        buf[i] = nybble_to_hex(nybble);
-        shift -= 4;
-    }
-}
-
-void uint8_to_hex(const uint8_t value, char *buf)
-{
-    uint8_t shift = 4;
-    for (uint_fast8_t i = 0; i < 2; ++i) {
-        const uint8_t nybble = (value >> shift) & 0xF;
-        buf[i] = nybble_to_hex(nybble);
-        shift -= 4;
-    }
-}
 
 
 void delay() {
     for (uint32_t i = 0; i < 800000; ++i) {
         __asm__ volatile("nop");
     }
-}
-
-void I2C1_EV_IRQHandler()
-{
-    static uint8_t next_read = 0;
-    const uint8_t sr1 = I2C1->SR1;
-    if (sr1 & I2C_SR1_SB) {
-        USART2->DR = 's';
-        // start generated
-        I2C1->DR = bus_addr << 1 | next_read;
-        /* if (next_read) { */
-        /*     I2C1->CR1 = (I2C1->CR1 & ~I2C_CR1_ACK) | I2C_CR1_STOP; */
-        /* } */
-    } else if (sr1 & I2C_SR1_ADDR) {
-        // address generated
-        // find out whether we were about to send or to receive
-        const volatile uint8_t sr2 = I2C1->SR2;
-        if (sr2 & I2C_SR2_TRA) {
-            USART2->DR = 't';
-            I2C1->DR = sub_addr;
-            I2C1->CR1 |= I2C_CR1_START;
-            // transmitter mode
-            next_read = 1;
-       } else {
-            USART2->DR = 'r';
-            // receiver mode
-            next_read = 0;
-            // we only want one byte
-            const uint16_t cr1 = I2C1->CR1;
-            I2C1->CR1 = (cr1 & ~I2C_CR1_ACK) | I2C_CR1_STOP;
-        }
-    } else if (sr1 & I2C_SR1_BTF) {
-        USART2->DR = 'f';
-    } else if (sr1 & I2C_SR1_TXE) {
-        USART2->DR = 'B';
-    } else if (sr1 & I2C_SR1_RXNE) {
-        USART2->DR = 'R';
-        recvd_byte = I2C1->DR;
-    } else {
-        USART2->DR = '?';
-    }
-}
-
-void I2C1_ER_IRQHandler()
-{
-    const uint16_t sr1 = I2C1->SR1;
-    if (sr1 & I2C_SR1_TIMEOUT) {
-        USART2->DR = 'T';
-    } else if (sr1 & I2C_SR1_PECERR) {
-        USART2->DR = 'P';
-    } else if (sr1 & I2C_SR1_SMBALERT) {
-        USART2->DR = 'S';
-    } else {
-        USART2->DR = nybble_to_hex(sr1 >> 8);
-    }
-    I2C1->SR1 = 0;
-    I2C1->CR1 |= I2C_CR1_STOP;
 }
 
 static const char hello_world[] = "Hello World!";
@@ -188,33 +87,54 @@ int main() {
 
     I2C1->CR1 = 0;
 
-    I2C1->CCR = 0
-        | 180;
-    I2C1->TRISE = 36+1;
+    /* I2C1->CCR = 0 */
+    /*     | 180; */
+    /* I2C1->TRISE = 36+1; */
 
-    I2C1->CR1 |= I2C_CR1_PE;
+    /* I2C1->CR1 |= I2C_CR1_PE; */
 
-    I2C1->CR2 = 0
-        | I2C_CR2_ITBUFEN
-        | I2C_CR2_ITEVTEN
-        | I2C_CR2_ITERREN
-        | 36  // frequency of APB1 domain, in MHz
-        ;
+    /* I2C1->CR2 = 0 */
+    /*     | I2C_CR2_ITBUFEN */
+    /*     | I2C_CR2_ITEVTEN */
+    /*     | I2C_CR2_ITERREN */
+    /*     | 36  // frequency of APB1 domain, in MHz */
+    /*     ; */
 
-    // I2C Interrupts
-    NVIC_EnableIRQ(31);
-    NVIC_EnableIRQ(32);
+    /* // I2C Interrupts */
+    /* NVIC_EnableIRQ(31); */
+    /* NVIC_EnableIRQ(32); */
 
     /* ls_freq_init(); */
     /* ls_freq_enable(); */
-
-    GPIOB->BSRR = GPIO_BSRR_BS6 | GPIO_BSRR_BS7;
+    i2c_init();
+    i2c_enable();
 
     puts("Hi!\n");
     delay();
 
+    i2c_workaround_reset();
+
     bool set = true;
-    uint8_t x = 32;
+    uint8_t x = 30;
+    /* uint8_t reg8[8] = {0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef}; */
+    uint16_t reg16[6] = {0xdead, 0xbeef, 0xdead, 0xbeef, 0xdead, 0xbeef};
+    static const uint8_t config_20[] = {
+        // 0x20
+        0x67,
+        0x00,
+    };
+    static const uint8_t config_24[] = {
+        // 0x24
+        0xf4,
+        0x00,
+        0x00,
+    };
+
+    i2c_smbus_write(0x1d, 0x20, 2, &config_20[0]);
+    delay();
+    i2c_smbus_write(0x1d, 0x24, 3, &config_24[0]);
+    delay();
+
     while (1) {
         if (set) {
             GPIOA->BSRR = GPIO_BSRR_BS5;
@@ -225,14 +145,34 @@ int main() {
         delay();
 
         if (x == 32) {
-            I2C1->CR1 |= I2C_CR1_START | I2C_CR1_ACK;
+            /* I2C1->CR1 |= I2C_CR1_START | I2C_CR1_ACK; */
+            /* i2c_smbus_read(0x1d, 0x1f, 8, &reg8[0]); */
+            i2c_smbus_read(0x1d, 0x28, 3*2, (uint8_t*)&reg16[0]);
             x = 0;
-        } else if (x == 15) {
-            char buf[4];
-            buf[2] = '\n';
-            buf[3] = 0;
-            uint8_to_hex(recvd_byte, buf);
+        } else if (x == 30) {
+            char buf[6];
+            buf[4] = ' ';
+            buf[5] = 0;
             puts("recvd = ");
+            for (uint8_t i = 0; i < 6; ++i) {
+                uint16_to_hex(reg16[i], buf);
+                puts(buf);
+            }
+        } else if (x == 31) {
+            char buf[6];
+            buf[4] = '\n';
+            buf[5] = 0;
+
+            puts("I2C SR2 = ");
+            uint16_to_hex(I2C1->SR2, buf);
+            puts(buf);
+
+            puts("I2C CR1 = ");
+            uint16_to_hex(I2C1->CR1, buf);
+            puts(buf);
+
+            puts("I2C CR2 = ");
+            uint16_to_hex(I2C1->CR2, buf);
             puts(buf);
         }
         x += 1;
