@@ -24,10 +24,12 @@ startup_file_obj = $(patsubst %.s,$(obj_dir)%.o,$(startup_file_src))
 
 all: test
 
+CFLAGS +=  -Wall -Wextra -Werror -I./ -fno-common -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles -fwrapv -static
+
 include ../stm32_spl/ST_STM32StdPeriph.mk
 
-CXXFLAGS := -std=c++11 -Wall -Wextra -Werror -I./ -fno-common -O0 -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles -fno-exceptions $(CFLAGS)
-CFLAGS := -std=c11 -Wall -Wextra -Werror -I./ -fno-common -O0 -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles $(CFLAGS)
+CXXFLAGS := -std=c++11 -fno-exceptions $(CFLAGS)
+CFLAGS := -std=c11 $(CFLAGS)
 
 system_obj = $($(PFX)_PFP)obj/CMSIS/Device/ST/STM32F10x/Source/system_stm32f10x.o
 

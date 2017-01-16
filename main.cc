@@ -6,20 +6,60 @@
 #include <stm32f10x.h>
 
 #include "i2clib.h"
+#include "clock.h"
 #include "utils.h"
+#include "scheduler.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
 int main();
 
+extern "C" {
+
+void NMI_Handler()
+{
+    while (1);
+}
+
+void HardFault_Handler()
+{
+    while (1);
+}
+
+void MemManage_Handler()
+{
+    while (1);
+}
+
+}
+
+
+class BlinkLED: public Coroutine
+{
+public:
+    void operator()()
+    {
+
+    }
+
+    COROUTINE_RETURN_TYPE step() override
+    {
+        COROUTINE_INIT;
+        while (1) {
+            await(csleep(500));
+            GPIOA->BSRR = GPIO_BSRR_BS5;
+            await(csleep(500));
+            GPIOA->BSRR = GPIO_BSRR_BR5;
+        }
+        COROUTINE_END;
+    }
+};
 
 void delay() {
     for (uint32_t i = 0; i < 800000; ++i) {
         __asm__ volatile("nop");
     }
 }
-
-static const char hello_world[] = "Hello World!";
 
 
 int main() {
@@ -87,6 +127,9 @@ int main() {
 
     I2C1->CR1 = 0;
 
+    Scheduler<1> scheduler;
+    BlinkLED blink;
+
     /* I2C1->CCR = 0 */
     /*     | 180; */
     /* I2C1->TRISE = 36+1; */
@@ -106,76 +149,92 @@ int main() {
 
     /* ls_freq_init(); */
     /* ls_freq_enable(); */
-    i2c_init();
-    i2c_enable();
+//    i2c_init();
+//    i2c_enable();
 
-    puts("Hi!\n");
-    delay();
+//    puts("Hi!\n");
+//    delay();
 
-    i2c_workaround_reset();
+//    i2c_workaround_reset();
 
-    bool set = true;
-    uint8_t x = 30;
-    /* uint8_t reg8[8] = {0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef}; */
-    uint16_t reg16[6] = {0xdead, 0xbeef, 0xdead, 0xbeef, 0xdead, 0xbeef};
-    static const uint8_t config_20[] = {
-        // 0x20
-        0x67,
-        0x00,
-    };
-    static const uint8_t config_24[] = {
-        // 0x24
-        0xf4,
-        0x00,
-        0x00,
-    };
+//    bool set = true;
+//    // uint8_t x = 30;
+//    /* uint8_t reg8[8] = {0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef}; */
+//    // uint16_t reg16[6] = {0xdead, 0xbeef, 0xdead, 0xbeef, 0xdead, 0xbeef};
+//    static const uint8_t config_20[] = {
+//        // 0x20
+//        0x67,
+//        0x00,
+//    };
+//    static const uint8_t config_24[] = {
+//        // 0x24
+//        0xf4,
+//        0x00,
+//        0x00,
+//    };
 
-    i2c_smbus_write(0x1d, 0x20, 2, &config_20[0]);
-    delay();
-    i2c_smbus_write(0x1d, 0x24, 3, &config_24[0]);
-    delay();
+//    i2c_smbus_write(0x1d, 0x20, 2, &config_20[0]);
+//    delay();
+//    i2c_smbus_write(0x1d, 0x24, 3, &config_24[0]);
+//    delay();
+
+    stm32_clock::init();
+    stm32_clock::enable();
+
+    scheduler.add_task(&blink);
+
+    scheduler.run();
 
     while (1) {
-        if (set) {
-            GPIOA->BSRR = GPIO_BSRR_BS5;
-        } else {
-            GPIOA->BSRR = GPIO_BSRR_BR5;
-        }
-        set = !set;
-        delay();
+//        if (set) {
+//            GPIOA->BSRR = GPIO_BSRR_BS5;
+//        } else {
+//            GPIOA->BSRR = GPIO_BSRR_BR5;
+//        }
+//        set = !set;
+//        usleep(500000);
 
-        if (x == 32) {
-            /* I2C1->CR1 |= I2C_CR1_START | I2C_CR1_ACK; */
-            /* i2c_smbus_read(0x1d, 0x1f, 8, &reg8[0]); */
-            i2c_smbus_read(0x1d, 0x28, 3*2, (uint8_t*)&reg16[0]);
-            x = 0;
-        } else if (x == 30) {
-            char buf[6];
-            buf[4] = ' ';
-            buf[5] = 0;
-            puts("recvd = ");
-            for (uint8_t i = 0; i < 6; ++i) {
-                uint16_to_hex(reg16[i], buf);
-                puts(buf);
-            }
-        } else if (x == 31) {
-            char buf[6];
-            buf[4] = '\n';
-            buf[5] = 0;
+//        {
+//            char buf[6];
+//            buf[4] = '\n';
+//            buf[5] = 0;
+//            uint16_to_hex(stm32_clock::now_raw() / 1000, buf);
+//            puts(buf);
+//        }
 
-            puts("I2C SR2 = ");
-            uint16_to_hex(I2C1->SR2, buf);
-            puts(buf);
+//        if (x == 32) {
+//            /* I2C1->CR1 |= I2C_CR1_START | I2C_CR1_ACK; */
+//            /* i2c_smbus_read(0x1d, 0x1f, 8, &reg8[0]); */
+//            i2c_smbus_read(0x1d, 0x28, 3*2, (uint8_t*)&reg16[0]);
+//            x = 0;
+//        } else if (x == 30) {
+//            char buf[6];
+//            buf[4] = ' ';
+//            buf[5] = 0;
+//            puts("recvd = ");
+//            for (uint8_t i = 0; i < 6; ++i) {
+//                uint16_to_hex(reg16[i], buf);
+//                puts(buf);
+//            }
+//        } else if (x == 31) {
+//            char buf[6];
+//            buf[4] = '\n';
+//            buf[5] = 0;
 
-            puts("I2C CR1 = ");
-            uint16_to_hex(I2C1->CR1, buf);
-            puts(buf);
+//            puts("I2C SR2 = ");
+//            uint16_to_hex(I2C1->SR2, buf);
+//            puts(buf);
 
-            puts("I2C CR2 = ");
-            uint16_to_hex(I2C1->CR2, buf);
-            puts(buf);
-        }
-        x += 1;
+//            puts("I2C CR1 = ");
+//            uint16_to_hex(I2C1->CR1, buf);
+//            puts(buf);
+
+//            puts("I2C CR2 = ");
+//            uint16_to_hex(I2C1->CR2, buf);
+//            puts(buf);
+//        }
+//        x += 1;
+
 
         /* uint16_to_hex(GPIOB->IDR, buf); */
         /* puts("GPIOB = "); */
