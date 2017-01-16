@@ -16,9 +16,21 @@ bool i2c_smbus_read(const uint8_t device_address,
                     const uint8_t register_address,
                     const uint8_t nbytes,
                     uint8_t *buf);
+
 bool i2c_smbus_write(const uint8_t device_address,
                      const uint8_t register_address,
                      const uint8_t nbytes,
                      const uint8_t *buf);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void I2C1_EV_IRQHandler();
+void I2C1_ER_IRQHandler();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

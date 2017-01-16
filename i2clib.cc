@@ -94,14 +94,14 @@ void i2c_workaround_reset()
 void i2c_enable()
 {
     I2C1->CR1 |= I2C_CR1_PE;
-    NVIC_EnableIRQ(31);
-    NVIC_EnableIRQ(32);
+    NVIC_EnableIRQ(I2C1_EV_IRQn);
+    NVIC_EnableIRQ(I2C1_ER_IRQn);
 }
 
 void i2c_disable()
 {
-    NVIC_DisableIRQ(31);
-    NVIC_DisableIRQ(32);
+    NVIC_DisableIRQ(I2C1_EV_IRQn);
+    NVIC_DisableIRQ(I2C2_EV_IRQn);
     I2C1->CR1 &= ~I2C_CR1_PE;
 }
 
