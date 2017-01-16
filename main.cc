@@ -42,13 +42,13 @@ public:
 
     }
 
-    COROUTINE_RETURN_TYPE step() override
+    COROUTINE_DECL
     {
         COROUTINE_INIT;
         while (1) {
-            await(csleep(500));
+            await(csleep(500, now));
             GPIOA->BSRR = GPIO_BSRR_BS5;
-            await(csleep(500));
+            await(csleep(500, now));
             GPIOA->BSRR = GPIO_BSRR_BR5;
         }
         COROUTINE_END;

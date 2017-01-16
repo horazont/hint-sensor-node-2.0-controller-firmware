@@ -11,7 +11,11 @@ struct wraparound_timepoint_t
     typedef typename duration::rep rep;
     typedef typename duration::period period;
 
-    wraparound_timepoint_t() = delete;
+    wraparound_timepoint_t():
+        m_d(0)
+    {
+
+    }
 
     wraparound_timepoint_t &operator+=(const duration &dur)
     {
@@ -25,8 +29,45 @@ struct wraparound_timepoint_t
         return *this;
     }
 
+    inline wraparound_timepoint_t operator+(const duration &dur) const
+    {
+        wraparound_timepoint_t result = *this;
+        result += dur;
+        return result;
+    }
+
+    bool operator<(const wraparound_timepoint_t other) const
+    {
+        const uint16_t t_this = m_d.count();
+        const uint16_t t_other = other.m_d.count();
+        const uint16_t other_based_on_this = t_other - t_this;
+        return other_based_on_this < (1<<15);
+    }
+
+    inline bool operator>(const wraparound_timepoint_t other) const
+    {
+        return !(*this <= other);
+    }
+
+    inline bool operator<=(const wraparound_timepoint_t other) const
+    {
+        if (other == *this) {
+            return true;
+        }
+        return *this < other;
+    }
+
+    inline bool operator==(const wraparound_timepoint_t other) const
+    {
+        return m_d == other.m_d;
+    }
+
 private:
-    wraparound_timepoint_t(const duration &dur);
+    explicit wraparound_timepoint_t(const duration &dur):
+        m_d(dur)
+    {
+
+    }
 
     duration m_d;
 
@@ -39,7 +80,7 @@ struct stm32_clock
   typedef std::chrono::duration<uint16_t, std::milli> duration;
   typedef duration::rep rep;
   typedef duration::period period;
-  typedef std::chrono::time_point<stm32_clock, duration> 	time_point;
+  typedef wraparound_timepoint_t<stm32_clock, duration> time_point;
 
   static constexpr bool is_steady = true;
 

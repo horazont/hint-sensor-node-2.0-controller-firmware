@@ -15,8 +15,8 @@ typedef stm32_clock sched_clock;
 
 
 #define COROUTINE_RETURN_TYPE WakeupCondition
-#define COROUTINE_DECL COROUTINE_RETURN_TYPE step() override
-#define COROUTINE_DEF(cls) COROUTINE_RETURN_TYPE cls::step()
+#define COROUTINE_DECL COROUTINE_RETURN_TYPE step(const sched_clock::time_point now) override
+#define COROUTINE_DEF(cls) COROUTINE_RETURN_TYPE cls::step(const sched_clock::time_point now)
 
 #define COROUTINE(name) \
     class name: public Coroutine \
@@ -72,10 +72,11 @@ protected:
     uint32_t m_state_line;
 
 public:
-    virtual WakeupCondition step();
+    virtual WakeupCondition step(const sched_clock::time_point now);
 };
 
 
-WakeupCondition csleep(uint32_t ms);
+WakeupCondition csleep(uint16_t ms);
+WakeupCondition csleep(uint16_t ms, sched_clock::time_point now);
 
 #endif

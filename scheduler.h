@@ -104,7 +104,7 @@ public:
             {
                 std::pop_heap(m_timed_tasks.begin(), m_timed_tasks_end);
                 Task &task = **(m_timed_tasks_end-1);
-                task.condition = task.coro->step();
+                task.condition = task.coro->step(now);
                 switch (task.condition.type)
                 {
                 case WakeupCondition::TIMER:
@@ -139,7 +139,7 @@ public:
                     continue;
                 }
                 if (task.can_run_now(now)) {
-                    task.condition = task.coro->step();
+                    task.condition = task.coro->step(now);
                     switch (task.condition.type)
                     {
                     case WakeupCondition::TIMER:
