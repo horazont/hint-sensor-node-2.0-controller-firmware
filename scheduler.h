@@ -2,12 +2,15 @@
 #define SBX_SCHEDULER_H
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cstdint>
 
 #include <stm32f10x.h>
 
 #include "coroutine.h"
+
+extern std::atomic_flag sched_no_event_pending;
 
 template <std::size_t max_tasks>
 class Scheduler
@@ -162,11 +165,25 @@ public:
                 }
             }
 
-            // wait for next interrupt
-            __WFI();
+            if (m_event_tasks_end == m_event_tasks.begin() &&
+                    m_timed_tasks_end == m_timed_tasks.begin())
+            {
+                // no tasks to run anymore!
+                return;
+            }
+
+            if (sched_no_event_pending.test_and_set()) {
+                // wait for next interrupt
+                __WFI();
+            }
         }
     }
 
 };
+
+inline void set_pending_event()
+{
+    sched_no_event_pending.clear();
+}
 
 #endif // SCHEDULER_H

@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <cstring>
 
 #include <stm32f10x.h>
 
@@ -18,16 +19,19 @@ extern "C" {
 
 void NMI_Handler()
 {
+    __ASM volatile("bkpt #03");
     while (1);
 }
 
 void HardFault_Handler()
 {
+    __ASM volatile("bkpt #04");
     while (1);
 }
 
 void MemManage_Handler()
 {
+    __ASM volatile("bkpt #05");
     while (1);
 }
 
@@ -46,10 +50,81 @@ public:
     {
         COROUTINE_INIT;
         while (1) {
-            await(csleep(500, now));
+            await(sleepc(500, now));
             GPIOA->BSRR = GPIO_BSRR_BS5;
-            await(csleep(500, now));
+            await(sleepc(500, now));
             GPIOA->BSRR = GPIO_BSRR_BR5;
+        }
+        COROUTINE_END;
+    }
+};
+
+
+class I2CSensor: public Coroutine
+{
+private:
+    uint8_t m_notify;
+    uint8_t m_reg8[8];
+    uint16_t m_reg16[6];
+    char m_buf[6];
+
+public:
+    void operator()()
+    {
+        memset(&m_reg8[0], 0x42, sizeof(m_reg8));
+        m_reg16[0] = 0xdead;
+        m_reg16[1] = 0xbeef;
+        m_reg16[2] = 0xdead;
+        m_reg16[3] = 0xbeef;
+        m_reg16[4] = 0xdead;
+        m_reg16[5] = 0xbeef;
+        m_buf[2] = ' ';
+        m_buf[3] = 0;
+        m_buf[4] = ' ';
+        m_buf[5] = 0;
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        static const uint8_t config_20[] = {
+            // 0x20
+            0x67,
+            0x00,
+        };
+        static const uint8_t config_24[] = {
+            // 0x24
+            0xf4,
+            0x00,
+            0x00,
+        };
+
+        await(i2c_smbus_writec(0x1d, 0x20, 2, &config_20[0], &m_notify));
+        await(i2c_smbus_writec(0x1d, 0x24, 3, &config_24[0], &m_notify));
+        await(i2c_smbus_readc(0x1d, 0x1f, 8, &m_reg8[0], &m_notify));
+        puts("recvd = ");
+        for (uint8_t i = 0; i < 8; ++i) {
+            uint8_to_hex(m_reg8[i], m_buf);
+            puts(m_buf);
+        }
+        puts("\n");
+
+//        uint16_to_hex(DMA1_Channel7->CNDTR, m_buf);
+//        puts(m_buf);
+//        puts("\n");
+//        m_buf[2] = ' ';
+//        m_buf[3] = 0;
+
+        while (1)
+        {
+            await(sleepc(1000, now));
+            await(i2c_smbus_readc(0x1d, 0x28, 3*2, (uint8_t*)&m_reg16[0], &m_notify));
+            await(i2c_smbus_readc(0x1d, 0x08, 3*2, (uint8_t*)&m_reg16[3], &m_notify));
+            puts("recvd = ");
+            for (uint8_t i = 0; i < 6; ++i) {
+                uint16_to_hex(m_reg16[i], m_buf);
+                puts(m_buf);
+            }
         }
         COROUTINE_END;
     }
@@ -60,6 +135,11 @@ void delay() {
         __asm__ volatile("nop");
     }
 }
+
+
+static BlinkLED blink;
+static I2CSensor sensor;
+static Scheduler<2> scheduler;
 
 
 int main() {
@@ -121,34 +201,15 @@ int main() {
         | RCC_APB1ENR_TIM4EN
         | RCC_APB1ENR_I2C1EN
         ;
+    RCC->AHBENR |= 0
+            | RCC_AHBENR_DMA1EN;
 
     USART2->BRR = 312;
     USART2->CR1 = USART_CR1_UE | USART_CR1_TE;
 
     I2C1->CR1 = 0;
 
-    Scheduler<1> scheduler;
-    BlinkLED blink;
 
-    /* I2C1->CCR = 0 */
-    /*     | 180; */
-    /* I2C1->TRISE = 36+1; */
-
-    /* I2C1->CR1 |= I2C_CR1_PE; */
-
-    /* I2C1->CR2 = 0 */
-    /*     | I2C_CR2_ITBUFEN */
-    /*     | I2C_CR2_ITEVTEN */
-    /*     | I2C_CR2_ITERREN */
-    /*     | 36  // frequency of APB1 domain, in MHz */
-    /*     ; */
-
-    /* // I2C Interrupts */
-    /* NVIC_EnableIRQ(31); */
-    /* NVIC_EnableIRQ(32); */
-
-    /* ls_freq_init(); */
-    /* ls_freq_enable(); */
 //    i2c_init();
 //    i2c_enable();
 
@@ -161,27 +222,16 @@ int main() {
 //    // uint8_t x = 30;
 //    /* uint8_t reg8[8] = {0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef}; */
 //    // uint16_t reg16[6] = {0xdead, 0xbeef, 0xdead, 0xbeef, 0xdead, 0xbeef};
-//    static const uint8_t config_20[] = {
-//        // 0x20
-//        0x67,
-//        0x00,
-//    };
-//    static const uint8_t config_24[] = {
-//        // 0x24
-//        0xf4,
-//        0x00,
-//        0x00,
-//    };
 
-//    i2c_smbus_write(0x1d, 0x20, 2, &config_20[0]);
-//    delay();
-//    i2c_smbus_write(0x1d, 0x24, 3, &config_24[0]);
-//    delay();
+    i2c_init();
+    i2c_enable();
+    i2c_workaround_reset();
 
     stm32_clock::init();
     stm32_clock::enable();
 
     scheduler.add_task(&blink);
+    scheduler.add_task(&sensor);
 
     scheduler.run();
 

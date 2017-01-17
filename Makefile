@@ -1,13 +1,14 @@
 CC      = arm-none-eabi-gcc
 CXX     = arm-none-eabi-g++
-LD      = arm-none-eabi-g++
+LD      = arm-none-eabi-ld
 CP      = arm-none-eabi-objcopy
 OD      = arm-none-eabi-objdump
+SIZE    = arm-none-eabi-size
 
 PLATFORM = STM32F10X_MD
 STM_STDPERIPH_DEBUG = 1
 
-LFLAGS  = -Tstm32_flash.ld  -L/usr/lib/arm-none-eabi/newlib/libc.a -nostartfiles -Wl,--gc-sections
+LFLAGS  = -Tstm32_flash.ld -nostartfiles -Wl,--gc-sections -L/usr/lib/arm-none-eabi/newlib/thumb/ -lstdc++ -lc
 CPFLAGS = -Obinary
 ODFLAGS = -S
 
@@ -24,11 +25,11 @@ startup_file_obj = $(patsubst %.s,$(obj_dir)%.o,$(startup_file_src))
 
 all: test
 
-CFLAGS +=  -Wall -Wextra -Werror -I./ -fno-common -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles -fwrapv -static
+CFLAGS +=  -Wall -Wextra -Werror -I./ -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles -fwrapv -static
 
 include ../stm32_spl/ST_STM32StdPeriph.mk
 
-CXXFLAGS := -std=c++11 -fno-exceptions $(CFLAGS)
+CXXFLAGS := -std=c++11 -fno-exceptions -fno-rtti $(CFLAGS)
 CFLAGS := -std=c11 $(CFLAGS)
 
 system_obj = $($(PFX)_PFP)obj/CMSIS/Device/ST/STM32F10x/Source/system_stm32f10x.o
@@ -39,12 +40,12 @@ clean: vendor_st_stm32_stdperiph_clean
 test: main.elf
 	@ echo "...copying"
 	$(CP) $(CPFLAGS) main.elf main.bin
-	$(OD) $(ODFLAGS) main.elf > main.lst
+	$(SIZE) main.elf
 
 
 main.elf: $(objs) $(startup_file_obj) stm32_flash.ld $(SPL_LIB) $(system_obj)
 	@ echo "..linking"
-	$(LD) $(LFLAGS) -o main.elf $(startup_file_obj) $(objs) $(SPL_LIB) $(system_obj)
+	$(CXX) $(LFLAGS) -o main.elf $(startup_file_obj) $(objs) $(SPL_LIB) $(system_obj)
 
 # main.elf: $(objs) $(startup_file_obj) stm32_flash.ld $(SPL_LIB) $(system_obj)
 # 	$(CC) $(CFLAGS) -Wl,-v -Wl,-Tstm32_flash.ld -L/usr/lib/arm-none-eabi/newlib/libc.a -Wl,-nostartfiles -Wl,--gc-sections -o main.elf $(startup_file_obj) $(objs) $(SPL_LIB) $(system_obj)

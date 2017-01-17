@@ -15,8 +15,10 @@ typedef stm32_clock sched_clock;
 
 
 #define COROUTINE_RETURN_TYPE WakeupCondition
-#define COROUTINE_DECL COROUTINE_RETURN_TYPE step(const sched_clock::time_point now) override
-#define COROUTINE_DEF(cls) COROUTINE_RETURN_TYPE cls::step(const sched_clock::time_point now)
+#define COROUTINE_DECL COROUTINE_RETURN_TYPE step(const sched_clock::time_point now __attribute__((unused))) override
+#define COROUTINE_DEF(cls) COROUTINE_RETURN_TYPE cls::step(const sched_clock::time_point now __attribute__((unused)))
+
+#define ASYNC_CALLABLE COROUTINE_RETURN_TYPE
 
 #define COROUTINE(name) \
     class name: public Coroutine \
@@ -27,6 +29,7 @@ typedef stm32_clock sched_clock;
 #define await(z)     \
         do {\
             m_state_line=__LINE__;\
+            static_assert(std::is_same<decltype(z), COROUTINE_RETURN_TYPE>::value, "non-awaitable passed to await.");\
             return (z); case __LINE__:;\
         } while (0)
 
@@ -37,7 +40,7 @@ typedef stm32_clock sched_clock;
             c(__VA_ARGS__);\
             m_state_line=__LINE__;\
             case __LINE__:;\
-            auto condition = c.step();\
+            auto condition = c.step(now);\
             if (condition.type != WakeupCondition::FINSIHED) {\
                 return condition;\
             }\
@@ -76,7 +79,7 @@ public:
 };
 
 
-WakeupCondition csleep(uint16_t ms);
-WakeupCondition csleep(uint16_t ms, sched_clock::time_point now);
+WakeupCondition sleepc(uint16_t ms);
+WakeupCondition sleepc(uint16_t ms, sched_clock::time_point now);
 
 #endif

@@ -8,9 +8,12 @@
 extern "C" {
 #endif
 
+extern void *__dso_handle;
+
 void *_sbrk(int increment);
 void _exit(int rc);
 void _kill(pid_t pid, int sig);
+void __run_init_array(void);
 
 #ifdef __cplusplus
 }
