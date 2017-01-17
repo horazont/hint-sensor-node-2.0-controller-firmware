@@ -27,14 +27,12 @@ bool i2c_smbus_write(const uint8_t device_address,
 ASYNC_CALLABLE i2c_smbus_writec(const uint8_t device_address,
                                 const uint8_t register_address,
                                 const uint8_t nbytes,
-                                const uint8_t *buf,
-                                volatile uint8_t *notify);
+                                const uint8_t *buf);
 
 ASYNC_CALLABLE i2c_smbus_readc(const uint8_t device_address,
                                const uint8_t register_address,
                                const uint8_t nbytes,
-                               uint8_t *buf,
-                               volatile uint8_t *notify);
+                               uint8_t *buf);
 
 #ifdef __cplusplus
 extern "C" {

@@ -99,9 +99,9 @@ public:
             0x00,
         };
 
-        await(i2c_smbus_writec(0x1d, 0x20, 2, &config_20[0], &m_notify));
-        await(i2c_smbus_writec(0x1d, 0x24, 3, &config_24[0], &m_notify));
-        await(i2c_smbus_readc(0x1d, 0x1f, 8, &m_reg8[0], &m_notify));
+        await(i2c_smbus_writec(0x1d, 0x20, 2, &config_20[0]));
+        await(i2c_smbus_writec(0x1d, 0x24, 3, &config_24[0]));
+        await(i2c_smbus_readc(0x1d, 0x1f, 8, &m_reg8[0]));
         puts("recvd = ");
         for (uint8_t i = 0; i < 8; ++i) {
             uint8_to_hex(m_reg8[i], m_buf);
@@ -118,8 +118,8 @@ public:
         while (1)
         {
             await(sleepc(1000, now));
-            await(i2c_smbus_readc(0x1d, 0x28, 3*2, (uint8_t*)&m_reg16[0], &m_notify));
-            await(i2c_smbus_readc(0x1d, 0x08, 3*2, (uint8_t*)&m_reg16[3], &m_notify));
+            await(i2c_smbus_readc(0x1d, 0x28, 3*2, (uint8_t*)&m_reg16[0]));
+            await(i2c_smbus_readc(0x1d, 0x08, 3*2, (uint8_t*)&m_reg16[3]));
             puts("recvd = ");
             for (uint8_t i = 0; i < 6; ++i) {
                 uint16_to_hex(m_reg16[i], m_buf);

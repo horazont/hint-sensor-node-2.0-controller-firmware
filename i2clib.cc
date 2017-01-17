@@ -17,7 +17,7 @@ struct i2c_task {
     uint8_t nbytes;
     uint8_t offset;
     enum i2c_state state;
-    volatile uint8_t *notify;
+    volatile uint8_t notify;
 
     union {
         uint8_t *w;
@@ -145,8 +145,7 @@ void i2c_disable()
 static void _i2c_prep_smbus_read(const uint8_t device_address,
                                  const uint8_t register_address,
                                  const uint8_t nbytes,
-                                 uint8_t *buf,
-                                 volatile uint8_t *notify)
+                                 uint8_t *buf)
 {
     curr_task.device_address = device_address;
     curr_task.write_task = false;
@@ -155,7 +154,7 @@ static void _i2c_prep_smbus_read(const uint8_t device_address,
     curr_task.offset = 0;
     curr_task.buf.w = buf;
     curr_task.state = I2C_STATE_SELECT_REGISTER;
-    curr_task.notify = notify;
+    curr_task.notify = 1;
 
     DMA_RX_CHANNEL->CCR &= ~DMA_CCR1_EN;
     DMA_RX_CHANNEL->CMAR = (uint32_t)buf;
@@ -169,8 +168,7 @@ static void _i2c_prep_smbus_read(const uint8_t device_address,
 static void _i2c_prep_smbus_write(const uint8_t device_address,
                                   const uint8_t register_address,
                                   const uint8_t nbytes,
-                                  const uint8_t *buf,
-                                  volatile uint8_t *notify)
+                                  const uint8_t *buf)
 {
     curr_task.device_address = device_address;
     curr_task.write_task = true;
@@ -179,7 +177,7 @@ static void _i2c_prep_smbus_write(const uint8_t device_address,
     curr_task.offset = 0;
     curr_task.buf.r = buf;
     curr_task.state = I2C_STATE_SELECT_REGISTER;
-    curr_task.notify = notify;
+    curr_task.notify = 1;
 
     DMA_TX_CHANNEL->CCR &= ~DMA_CCR1_EN;
     DMA_TX_CHANNEL->CMAR = (uint32_t)buf;
@@ -195,7 +193,7 @@ bool i2c_smbus_read(const uint8_t device_address,
                     const uint8_t nbytes,
                     uint8_t *buf)
 {
-    _i2c_prep_smbus_read(device_address, register_address, nbytes, buf, nullptr);
+    _i2c_prep_smbus_read(device_address, register_address, nbytes, buf);
     return true;
 }
 
@@ -204,7 +202,7 @@ bool i2c_smbus_write(const uint8_t device_address,
                      const uint8_t nbytes,
                      const uint8_t *buf)
 {
-    _i2c_prep_smbus_write(device_address, register_address, nbytes, buf, nullptr);
+    _i2c_prep_smbus_write(device_address, register_address, nbytes, buf);
     return true;
 }
 
@@ -212,24 +210,20 @@ ASYNC_CALLABLE i2c_smbus_readc(
         const uint8_t device_address,
         const uint8_t register_address,
         const uint8_t nbytes,
-        uint8_t *buf,
-        volatile uint8_t *notify)
+        uint8_t *buf)
 {
-    *notify = 1;
-    _i2c_prep_smbus_read(device_address, register_address, nbytes, buf, notify);
-    return WakeupCondition::event(notify);
+    _i2c_prep_smbus_read(device_address, register_address, nbytes, buf);
+    return WakeupCondition::event(&curr_task.notify);
 }
 
 ASYNC_CALLABLE i2c_smbus_writec(
         const uint8_t device_address,
         const uint8_t register_address,
         const uint8_t nbytes,
-        const uint8_t *buf,
-        volatile uint8_t *notify)
+        const uint8_t *buf)
 {
-    *notify = 1;
-    _i2c_prep_smbus_write(device_address, register_address, nbytes, buf, notify);
-    return WakeupCondition::event(notify);
+    _i2c_prep_smbus_write(device_address, register_address, nbytes, buf);
+    return WakeupCondition::event(&curr_task.notify);
 }
 
 
@@ -279,9 +273,7 @@ void I2C1_EV_IRQHandler()
         } else if (curr_task.write_task) {
             // USART2->DR = 't';
             I2C1->CR1 |= I2C_CR1_STOP;
-            if (curr_task.notify) {
-                *curr_task.notify = 0;
-            }
+            curr_task.notify = 0;
         }
     } else if (sr1 & I2C_SR1_RXNE) {
         __ASM volatile("bkpt #06");
@@ -323,13 +315,9 @@ void DMA1_Channel7_IRQHandler()
     // for RX, I2C takes care of the STOP condition by itself
     const uint32_t flags = DMA1->ISR;
     if (flags & DMA_ISR_TCIF7) {
-        if (curr_task.notify) {
-            *curr_task.notify = 0;
-        }
+        curr_task.notify = 0;
     } else if (flags & DMA_ISR_TEIF7) {
-        if (curr_task.notify) {
-            *curr_task.notify = 0;
-        }
+        curr_task.notify = 0;
     }
     // clear all channel 7 interrupts
     DMA1->IFCR = DMA_IFCR_CHTIF7 | DMA_IFCR_CGIF7 | DMA_IFCR_CTCIF7 | DMA_IFCR_CTEIF7;
