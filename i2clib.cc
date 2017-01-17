@@ -54,10 +54,8 @@ void i2c_init()
         | 36  // frequency of APB1 domain, in MHz
         ;
 
-    GPIOB->CRL = (GPIOB->CRL & ~(GPIO_CRL_MODE6_1 | GPIO_CRL_MODE6_0 |
-                                 GPIO_CRL_CNF6_1 | GPIO_CRL_CNF6_0 |
-                                 GPIO_CRL_MODE7_1 | GPIO_CRL_MODE7_0 |
-                                 GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0))
+    GPIOB->CRL = (GPIOB->CRL & ~(GPIO_CRL_MODE6 | GPIO_CRL_MODE7 |
+                                 GPIO_CRL_CNF6 | GPIO_CRL_CNF7))
         | GPIO_CRL_MODE6_0 | GPIO_CRL_CNF6_1 | GPIO_CRL_CNF6_0
         | GPIO_CRL_MODE7_0 | GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0
         ;
@@ -101,10 +99,8 @@ void i2c_workaround_reset()
     i2c_disable();
 
     // configure as general-purpose open-drain outputs
-    GPIOB->CRL = (GPIOB->CRL & ~(GPIO_CRL_MODE6_1 | GPIO_CRL_MODE6_0 |
-                                 GPIO_CRL_CNF6_1 | GPIO_CRL_CNF6_0 |
-                                 GPIO_CRL_MODE7_1 | GPIO_CRL_MODE7_0 |
-                                 GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0))
+    GPIOB->CRL = (GPIOB->CRL & ~(GPIO_CRL_MODE6 | GPIO_CRL_MODE7 |
+                                 GPIO_CRL_CNF6 | GPIO_CRL_CNF7))
         | GPIO_CRL_MODE6_0 | GPIO_CRL_CNF6_0
         | GPIO_CRL_MODE7_0 | GPIO_CRL_CNF7_0;
 
