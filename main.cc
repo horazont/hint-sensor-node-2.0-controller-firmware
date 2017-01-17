@@ -183,10 +183,6 @@ int main() {
         | GPIO_CRL_MODE7_0 | GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0
         ;
 
-    /* char buf[6]; */
-    /* buf[5] = 0; */
-    /* buf[4] = '\n'; */
-
     RCC->APB2ENR |= 0
         | RCC_APB2ENR_IOPAEN
         | RCC_APB2ENR_IOPBEN
@@ -209,20 +205,6 @@ int main() {
 
     I2C1->CR1 = 0;
 
-
-//    i2c_init();
-//    i2c_enable();
-
-//    puts("Hi!\n");
-//    delay();
-
-//    i2c_workaround_reset();
-
-//    bool set = true;
-//    // uint8_t x = 30;
-//    /* uint8_t reg8[8] = {0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef}; */
-//    // uint16_t reg16[6] = {0xdead, 0xbeef, 0xdead, 0xbeef, 0xdead, 0xbeef};
-
     i2c_init();
     i2c_enable();
     i2c_workaround_reset();
@@ -235,63 +217,7 @@ int main() {
 
     scheduler.run();
 
-    while (1) {
-//        if (set) {
-//            GPIOA->BSRR = GPIO_BSRR_BS5;
-//        } else {
-//            GPIOA->BSRR = GPIO_BSRR_BR5;
-//        }
-//        set = !set;
-//        usleep(500000);
-
-//        {
-//            char buf[6];
-//            buf[4] = '\n';
-//            buf[5] = 0;
-//            uint16_to_hex(stm32_clock::now_raw() / 1000, buf);
-//            puts(buf);
-//        }
-
-//        if (x == 32) {
-//            /* I2C1->CR1 |= I2C_CR1_START | I2C_CR1_ACK; */
-//            /* i2c_smbus_read(0x1d, 0x1f, 8, &reg8[0]); */
-//            i2c_smbus_read(0x1d, 0x28, 3*2, (uint8_t*)&reg16[0]);
-//            x = 0;
-//        } else if (x == 30) {
-//            char buf[6];
-//            buf[4] = ' ';
-//            buf[5] = 0;
-//            puts("recvd = ");
-//            for (uint8_t i = 0; i < 6; ++i) {
-//                uint16_to_hex(reg16[i], buf);
-//                puts(buf);
-//            }
-//        } else if (x == 31) {
-//            char buf[6];
-//            buf[4] = '\n';
-//            buf[5] = 0;
-
-//            puts("I2C SR2 = ");
-//            uint16_to_hex(I2C1->SR2, buf);
-//            puts(buf);
-
-//            puts("I2C CR1 = ");
-//            uint16_to_hex(I2C1->CR1, buf);
-//            puts(buf);
-
-//            puts("I2C CR2 = ");
-//            uint16_to_hex(I2C1->CR2, buf);
-//            puts(buf);
-//        }
-//        x += 1;
-
-
-        /* uint16_to_hex(GPIOB->IDR, buf); */
-        /* puts("GPIOB = "); */
-        /* puts(buf); */
-
-        /* USART2->DR = 'x'; */
-    }
+    while (1) {}
 
     return 0;
 }
