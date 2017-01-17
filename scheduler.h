@@ -159,7 +159,13 @@ public:
                         m_event_tasks_end--;
                         break;
                     }
-                    case WakeupCondition::NONE:;
+                    case WakeupCondition::NONE:
+                    {
+                        // we must not sleep, NONE wants to run again
+                        // immediately
+                        sched_no_event_pending.clear();
+                        break;
+                    }
                     case WakeupCondition::EVENT:;
                     }
                 }
