@@ -19,21 +19,9 @@ WakeupCondition Coroutine::step(const stm32_clock::time_point now)
     COROUTINE_END;
 }
 
-WakeupCondition WakeupCondition::finished()
-{
-    WakeupCondition result;
-    result.type = WakeupCondition::FINSIHED;
-    result.event_bits = nullptr;
-    return result;
-}
 
-WakeupCondition WakeupCondition::event(volatile uint8_t *event_bits)
-{
-    WakeupCondition result;
-    result.type = WakeupCondition::EVENT;
-    result.event_bits = event_bits;
-    return result;
-}
+
+
 
 WakeupCondition sleepc(uint16_t ms)
 {

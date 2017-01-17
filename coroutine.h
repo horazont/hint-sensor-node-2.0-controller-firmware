@@ -33,7 +33,7 @@ typedef stm32_clock sched_clock;
             return (z); case __LINE__:;\
         } while (0)
 
-#define yield await(WakeupCondition{.type=WakeupCondition::NONE})
+#define yield await(WakeupCondition::none())
 
 #define await_call(c, ...)\
         do {\
@@ -61,8 +61,28 @@ struct WakeupCondition
     sched_clock::time_point wakeup_at;
     volatile uint8_t *event_bits;
 
-    static WakeupCondition finished();
-    static WakeupCondition event(volatile uint8_t *event_bits);
+    inline static WakeupCondition finished()
+    {
+        WakeupCondition result;
+        result.type = WakeupCondition::FINSIHED;
+        result.event_bits = nullptr;
+        return result;
+    }
+
+    inline static WakeupCondition event(volatile uint8_t *event_bits)
+    {
+        WakeupCondition result;
+        result.type = WakeupCondition::EVENT;
+        result.event_bits = event_bits;
+        return result;
+    }
+
+    inline static WakeupCondition none()
+    {
+        WakeupCondition result;
+        result.type = WakeupCondition::NONE;
+        return result;
+    }
 };
 
 class Coroutine
