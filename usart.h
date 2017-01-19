@@ -28,7 +28,7 @@ private:
     DMA_Channel_TypeDef *const m_tx_dma;
     DMA_Channel_TypeDef *const m_rx_dma;
     const IRQn_Type m_irq;
-    volatile uint8_t m_idle_notify;
+    volatile uint8_t m_tx_idle_notify;
     const uint8_t *m_tx_buf;
     uint16_t m_tx_len;
     uint16_t m_tx_offset;

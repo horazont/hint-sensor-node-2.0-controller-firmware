@@ -72,7 +72,6 @@ public:
         m_need_reset(true),
         m_average_accum(0),
         m_average_accum_ctr(0),
-        m_seq(0),
         m_hangover_len(0)
     {
     }
@@ -82,8 +81,7 @@ private:
     bool m_need_reset;
     uint16_t m_previous_average;
     int32_t m_average_accum;
-    uint_fast8_t m_average_accum_ctr;
-    uint8_t m_seq;
+    uint16_t m_average_accum_ctr;
 
     std::array<uint16_t, IMU_BUFFER_LENGTH> m_hangover_buffer;
     uint_fast8_t m_hangover_len;
@@ -183,7 +181,7 @@ private:
         msg.type = static_cast<sbx_msg_type>(
                     static_cast<uint8_t>(sbx_msg_type::SENSOR_STREAM_ACCEL_X) +
                     m_src_offset);
-        msg.payload.sensor_stream.seq = m_seq++;
+        msg.payload.sensor_stream.seq = m_src_buffer->seq;
         msg.payload.sensor_stream.average = m_average;
 
         *m_packet_size_out =
@@ -220,8 +218,9 @@ public:
         // we need to pack the data, and we need to keep data which was
         // unpackable
         m_average = (
-                    m_previous_average_known ? m_previous_average : (*m_src_buffer)[0].accel_compass[m_src_offset]
+                    m_previous_average_known ? m_previous_average : m_src_buffer->samples[0].accel_compass[m_src_offset]
                     );
+        // m_average = (*m_src_buffer)[0].accel_compass[m_src_offset];
 //        {
 //            char buf[10];
 //            buf[8] = '\n';
@@ -242,13 +241,13 @@ public:
         }*/
 
         m_samples_used = 0;
-        for (m_i = 0; m_i < (*m_src_buffer).size(); ++m_i)
+        for (m_i = 0; m_i < m_src_buffer->samples.size(); ++m_i)
         {
-            if (!pack_sample((*m_src_buffer)[m_i].accel_compass[m_src_offset])) {
+            if (!pack_sample(m_src_buffer->samples[m_i].accel_compass[m_src_offset])) {
                 break;
             }
         }
-        if (m_samples_used == m_src_buffer->size() &&
+        if (m_samples_used == m_src_buffer->samples.size() &&
                 m_payload_size < SENSOR_STREAM::MAX_ENCODED_SAMPLE_BYTES-3)
         {
             // there is enough room left for more data
@@ -267,8 +266,8 @@ public:
         }
 
         m_hangover_len = 0;
-        for (m_i = m_samples_used; m_i < m_src_buffer->size(); ++m_i) {
-            m_hangover_buffer[m_i] = (*m_src_buffer)[m_i].accel_compass[m_src_offset];
+        for (m_i = m_samples_used; m_i < m_src_buffer->samples.size(); ++m_i) {
+            m_hangover_buffer[m_i] = m_src_buffer->samples[m_i].accel_compass[m_src_offset];
             m_hangover_len += 1;
         }
 
@@ -300,7 +299,8 @@ private:
     } m_reg;
     char m_buf[6];
     const imu_buffer_t *m_buffer;
-    PackBuffer m_accel_x_packer;
+    PackBuffer m_packers[6];
+    uint8_t m_i;
     uint8_t m_packet_size;
     const sbx_msg_t *m_msg;
 
@@ -335,6 +335,9 @@ public:
             0x00,
         };
 
+        /*static const uint8_t delimiter1[2] = {0xde, 0xad};
+        static const uint8_t delimiter2[2] = {0xbe, 0xef};*/
+
         await(i2c_smbus_writec(0x1d, 0x20, 2, &config_20[0]));
         await(i2c_smbus_writec(0x1d, 0x24, 3, &config_24[0]));
         await(i2c_smbus_readc(0x1d, 0x1f, 8, &m_reg.r8[0]));
@@ -347,15 +350,19 @@ public:
         imu_timed_init();
         imu_timed_enable();
 
+        await(usart2.tx_ready());
         while (1) {
             await(imu_timed_full_buffer(m_buffer));
-            await(usart2.tx_ready());
+            /*await(usart2.send_c(delimiter1, 2));
             await(usart2.send_c((uint8_t*)m_buffer, IMU_BUFFER_LENGTH*sizeof(imu_data_point_t)));
-            await_call(m_accel_x_packer, *m_buffer, 0, m_packet_size, m_msg);
-            if (m_msg) {
-                // packet finished
-                await(usart2.tx_ready());
-                await(usart2.send_c((uint8_t*)m_msg, m_packet_size));
+            await(usart2.send_c(delimiter2, 2));*/
+            for (m_i = 0; m_i < 6; ++m_i) {
+                await_call(m_packers[m_i], *m_buffer, m_i, m_packet_size, m_msg);
+                if (m_msg) {
+                    // packet finished
+                    await(usart2.tx_ready());
+                    await(usart2.send_c((uint8_t*)m_msg, m_packet_size));
+                }
             }
         }
 

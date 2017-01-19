@@ -13,7 +13,11 @@ struct __attribute__((packed)) imu_data_point_t
 
 static constexpr std::size_t IMU_BUFFER_LENGTH = 12;
 
-using imu_buffer_t = std::array<imu_data_point_t, IMU_BUFFER_LENGTH>;
+struct imu_buffer_t
+{
+    uint8_t seq;
+    std::array<imu_data_point_t, IMU_BUFFER_LENGTH> samples;
+};
 
 void imu_timed_init();
 void imu_timed_enable();

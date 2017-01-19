@@ -68,7 +68,7 @@ ASYNC_CALLABLE USART::tx_ready()
     if (m_usart->SR & USART_SR_TC) {
         return WakeupCondition::none();
     }
-    return WakeupCondition::event(&m_idle_notify);
+    return WakeupCondition::event(&m_tx_idle_notify);
 }
 
 ASYNC_CALLABLE USART::send_c(const uint8_t *buf, const uint16_t len)
@@ -80,10 +80,11 @@ ASYNC_CALLABLE USART::send_c(const uint8_t *buf, const uint16_t len)
     m_tx_buf = buf;
     m_tx_len = len;
     m_tx_offset = 0;
+    m_tx_idle_notify = 1;
 
-    m_usart->CR1 |= USART_CR1_TE | USART_CR1_TXEIE;
+    m_usart->CR1 |= USART_CR1_TE | USART_CR1_TXEIE | USART_CR1_TCIE;
 
-    return tx_ready();
+    return WakeupCondition::event(&m_tx_idle_notify);
 }
 
 void USART::send(const uint8_t *buf, const uint16_t len)
@@ -91,6 +92,7 @@ void USART::send(const uint8_t *buf, const uint16_t len)
     auto &sr = m_usart->SR;
     auto &dr = m_usart->DR;
     auto &cr1 = m_usart->CR1;
+    m_tx_idle_notify = 1;
     cr1 |= USART_CR1_TE;
     for (uint16_t i = 0; i < len; ++i) {
         while (!(sr & USART_SR_TC));
@@ -98,6 +100,7 @@ void USART::send(const uint8_t *buf, const uint16_t len)
     }
     while (!(sr & USART_SR_TC));
     cr1 &= ~USART_CR1_TE;
+    m_tx_idle_notify = 0;
 }
 
 void USART::sendch(const uint8_t ch)
@@ -105,11 +108,13 @@ void USART::sendch(const uint8_t ch)
     auto &sr = m_usart->SR;
     auto &dr = m_usart->DR;
     auto &cr1 = m_usart->CR1;
+    m_tx_idle_notify = 1;
     cr1 |= USART_CR1_TE;
     while (!(sr & USART_SR_TC));
     dr = ch;
     while (!(sr & USART_SR_TC));
     cr1 &= ~USART_CR1_TE;
+    m_tx_idle_notify = 0;
 }
 
 void USART::sendstr(const char *buf)
@@ -117,6 +122,7 @@ void USART::sendstr(const char *buf)
     auto &sr = m_usart->SR;
     auto &dr = m_usart->DR;
     auto &cr1 = m_usart->CR1;
+    m_tx_idle_notify = 1;
     cr1 |= USART_CR1_TE;
     while (*buf != 0) {
         while (!(sr & USART_SR_TC));
@@ -124,6 +130,7 @@ void USART::sendstr(const char *buf)
     }
     while (!(sr & USART_SR_TC));
     cr1 &= ~USART_CR1_TE;
+    m_tx_idle_notify = 0;
 }
 
 
@@ -133,10 +140,11 @@ static inline void irq_handler()
     USART_TypeDef *const usart = usart_obj->m_usart;
     const uint16_t sr = usart->SR;
     if (sr & USART_SR_TXE) {
-        if (usart_obj->m_tx_offset == usart_obj->m_tx_len) {
-            usart->CR1 &= ~(USART_CR1_TE | USART_CR1_TXEIE);
-        } else {
+        if (usart_obj->m_tx_offset < usart_obj->m_tx_len) {
             usart->DR = usart_obj->m_tx_buf[usart_obj->m_tx_offset++];
+        } else if (sr & USART_SR_TC) {
+            usart->CR1 &= ~(USART_CR1_TE | USART_CR1_TXEIE | USART_CR1_TCIE);
+            usart_obj->m_tx_idle_notify = 0;
         }
     }
 }
