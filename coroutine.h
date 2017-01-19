@@ -10,7 +10,8 @@
 typedef stm32_clock sched_clock;
 
 #define COROUTINE_INIT         switch(m_state_line) { case 0:
-#define COROUTINE_END          } return WakeupCondition::finished();
+#define COROUTINE_RETURN       return WakeupCondition::finished()
+#define COROUTINE_END          } COROUTINE_RETURN;
 
 
 
@@ -28,9 +29,9 @@ typedef stm32_clock sched_clock;
 
 #define await(z)     \
         do {\
-            m_state_line=__LINE__;\
+            m_state_line=__LINE__ << 1;\
             static_assert(std::is_same<decltype(z), COROUTINE_RETURN_TYPE>::value, "non-awaitable passed to await.");\
-            return (z); case __LINE__:;\
+            return (z); case __LINE__ << 1:;\
         } while (0)
 
 #define yield await(WakeupCondition::none())
@@ -38,12 +39,16 @@ typedef stm32_clock sched_clock;
 #define await_call(c, ...)\
         do {\
             c(__VA_ARGS__);\
-            m_state_line=__LINE__;\
-            case __LINE__:;\
-            auto condition = c.step(now);\
-            if (condition.type != WakeupCondition::FINSIHED) {\
-                return condition;\
+            m_state_line=__LINE__ << 1;\
+            case __LINE__ << 1:;\
+            {\
+                auto condition = c.step(now);\
+                if (condition.type != WakeupCondition::FINSIHED) {\
+                    return condition;\
+                }\
             }\
+            m_state_line=(__LINE__ << 1) | 1;\
+            case (__LINE__ << 1) | 1:;\
         } while (0)
 
 
@@ -93,6 +98,9 @@ public:
 
 protected:
     uint32_t m_state_line;
+
+protected:
+    void operator()();
 
 public:
     virtual WakeupCondition step(const sched_clock::time_point now);

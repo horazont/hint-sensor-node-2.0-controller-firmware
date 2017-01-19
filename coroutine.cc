@@ -12,6 +12,11 @@ Coroutine::~Coroutine()
 
 }
 
+void Coroutine::operator()()
+{
+    m_state_line = 0;
+}
+
 WakeupCondition Coroutine::step(const stm32_clock::time_point now)
 {
     (void)now;

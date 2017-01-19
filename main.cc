@@ -10,6 +10,9 @@
 #include "clock.h"
 #include "utils.h"
 #include "scheduler.h"
+#include "imu.h"
+#include "comm_sbx.h"
+#include "usart.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
@@ -43,7 +46,7 @@ class BlinkLED: public Coroutine
 public:
     void operator()()
     {
-
+        Coroutine::operator()();
     }
 
     COROUTINE_DECL
@@ -60,24 +63,257 @@ public:
 };
 
 
-class I2CSensor: public Coroutine
+class PackBuffer: public Coroutine
+{
+public:
+    PackBuffer():
+        Coroutine(),
+        m_previous_average_known(false),
+        m_need_reset(true),
+        m_average_accum(0),
+        m_average_accum_ctr(0),
+        m_seq(0),
+        m_hangover_len(0)
+    {
+    }
+
+private:
+    bool m_previous_average_known;
+    bool m_need_reset;
+    uint16_t m_previous_average;
+    int32_t m_average_accum;
+    uint_fast8_t m_average_accum_ctr;
+    uint8_t m_seq;
+
+    std::array<uint16_t, IMU_BUFFER_LENGTH> m_hangover_buffer;
+    uint_fast8_t m_hangover_len;
+
+
+private:
+    const imu_buffer_t *m_src_buffer;
+    uint_fast8_t m_src_offset;
+
+    const sbx_msg_t **m_msg_out;
+    uint8_t *m_packet_size_out;
+
+    uint16_t m_average;
+
+    std::array<uint8_t, SENSOR_STREAM::MAX_BITMAP_SIZE> m_bitmap_buffer;
+    std::array<uint8_t, MAX_XBEE_PAYLOAD_SIZE> m_packet_buffer;
+    uint8_t m_bitmap_byte;
+    uint8_t m_bitmap_bit;
+
+    uint8_t m_payload_size;
+    uint8_t m_samples_used;
+    uint8_t m_packet_pos;
+
+    uint8_t m_i;
+
+    inline void reset()
+    {
+        memset(&m_bitmap_buffer[0], 0, m_bitmap_buffer.size());
+        memset(&m_packet_buffer[0], 0, m_packet_buffer.size());
+        m_bitmap_bit = 7;
+        m_bitmap_byte = 0;
+        m_payload_size = 0;
+        m_samples_used = 0;
+        m_packet_pos = 0;
+    }
+
+    inline bool pack_sample(uint16_t sample)
+    {
+        m_average_accum += (int16_t)sample;
+        m_average_accum_ctr += 1;
+        const uint16_t value = sample - m_average;
+        const int16_t svalue = (int16_t)value;
+
+        if (m_bitmap_bit == 7) {
+            m_payload_size += 1;
+        }
+
+        if (-128 <= svalue && svalue < 127) {
+            m_payload_size += 1;
+            if (m_payload_size > SENSOR_STREAM::MAX_ENCODED_SAMPLE_BYTES) {
+                return false;
+            }
+
+            m_packet_buffer[m_packet_pos++] = (uint8_t)(int8_t)value;
+            m_bitmap_buffer[m_bitmap_byte] |= (1<<m_bitmap_bit);
+        } else {
+            m_payload_size += 2;
+            if (m_payload_size > SENSOR_STREAM::MAX_ENCODED_SAMPLE_BYTES) {
+                return false;
+            }
+
+            memcpy(&m_packet_buffer[m_packet_pos], &value, sizeof(uint16_t));
+            m_packet_pos += 2;
+            // zero bit in bitmap
+        }
+
+        m_samples_used += 1;
+
+        if (m_bitmap_bit == 0) {
+            m_bitmap_bit = 7;
+            m_bitmap_byte += 1;
+        } else {
+            m_bitmap_bit -= 1;
+        }
+
+        return true;
+    }
+
+    inline void finish_packet()
+    {
+        m_previous_average_known = m_average_accum_ctr > 0;
+        if (m_previous_average_known) {
+            m_previous_average = (uint16_t)(m_average_accum / m_average_accum_ctr);
+        }
+        m_average_accum = 0;
+        m_average_accum_ctr = 0;
+
+        const uint8_t bitmap_len = (m_bitmap_bit == 7 ? m_bitmap_byte : m_bitmap_byte+1);
+        // const uint8_t total_len = bitmap_len + m_packet_pos + 2;
+        sbx_msg_t &msg = *reinterpret_cast<sbx_msg_t*>(&m_packet_buffer.front());
+        memmove(&msg.payload.sensor_stream.data[bitmap_len],
+                &m_packet_buffer[0],
+                m_packet_pos);
+        memcpy(&msg.payload.sensor_stream.data[0],
+                &m_bitmap_buffer[0],
+                bitmap_len);
+        msg.type = static_cast<sbx_msg_type>(
+                    static_cast<uint8_t>(sbx_msg_type::SENSOR_STREAM_ACCEL_X) +
+                    m_src_offset);
+        msg.payload.sensor_stream.seq = m_seq++;
+        msg.payload.sensor_stream.average = m_average;
+
+        *m_packet_size_out =
+                bitmap_len + m_packet_pos +
+                sizeof(sbx_msg_type) +
+                sizeof(sbx_msg_sensor_stream_t);
+        *m_msg_out = &msg;
+
+        m_need_reset = true;
+    }
+
+public:
+    void operator()(const imu_buffer_t &buffer,
+                    const uint_fast8_t src_offset,
+                    uint8_t &packet_size_out,
+                    const sbx_msg_t *&msg_out)
+    {
+        Coroutine::operator()();
+        m_src_buffer = &buffer;
+        m_src_offset = src_offset;
+        m_packet_size_out = &packet_size_out;
+        m_msg_out = &msg_out;
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        if (m_need_reset) {
+            reset();
+            m_need_reset = false;
+        }
+
+        // we have a buffer, now what?
+        // we need to pack the data, and we need to keep data which was
+        // unpackable
+        m_average = (
+                    m_previous_average_known ? m_previous_average : (*m_src_buffer)[0].accel_compass[m_src_offset]
+                    );
+//        {
+//            char buf[10];
+//            buf[8] = '\n';
+//            buf[9] = 0;
+//            uint32_to_hex(
+//                        (m_previous_average << 16) | (m_previous_average_known << 8),
+//                        buf);
+//            puts(buf);
+//        }
+
+        /*if (m_hangover_len) {
+//            puts("data in hangover buffer\n");
+            for (m_i = 0; m_i < m_hangover_len; ++m_i) {
+                // hangover buffer is too small to cause a packet to be emitted
+                pack_sample(m_hangover_buffer[m_i]);
+            }
+            m_hangover_len = 0;
+        }*/
+
+        m_samples_used = 0;
+        for (m_i = 0; m_i < (*m_src_buffer).size(); ++m_i)
+        {
+            if (!pack_sample((*m_src_buffer)[m_i].accel_compass[m_src_offset])) {
+                break;
+            }
+        }
+        if (m_samples_used == m_src_buffer->size() &&
+                m_payload_size < SENSOR_STREAM::MAX_ENCODED_SAMPLE_BYTES-3)
+        {
+            // there is enough room left for more data
+            *m_msg_out = nullptr;
+//            puts("still room: ");
+//            {
+//                char buf[10];
+//                buf[8] = '\n';
+//                buf[9] = 0;
+//                uint32_to_hex(
+//                            m_samples_used | (m_payload_size << 8),
+//                            buf);
+//                puts(buf);
+//            }
+            COROUTINE_RETURN;
+        }
+
+        m_hangover_len = 0;
+        for (m_i = m_samples_used; m_i < m_src_buffer->size(); ++m_i) {
+            m_hangover_buffer[m_i] = (*m_src_buffer)[m_i].accel_compass[m_src_offset];
+            m_hangover_len += 1;
+        }
+
+//        puts("full: ");
+//        {
+//            char buf[10];
+//            buf[8] = '\n';
+//            buf[9] = 0;
+//            uint32_to_hex(
+//                        m_samples_used | (m_payload_size << 8),
+//                        buf);
+//            puts(buf);
+//        }
+
+        yield;
+        // TODO: fix dropping of unused samples!
+        finish_packet();
+        COROUTINE_END;
+    }
+};
+
+
+class IMUStream: public Coroutine
 {
 private:
-    uint8_t m_notify;
-    uint8_t m_reg8[8];
-    uint16_t m_reg16[6];
+    union {
+        uint8_t r8[8];
+        uint16_t r16[6];
+    } m_reg;
     char m_buf[6];
+    const imu_buffer_t *m_buffer;
+    PackBuffer m_accel_x_packer;
+    uint8_t m_packet_size;
+    const sbx_msg_t *m_msg;
 
 public:
     void operator()()
     {
-        memset(&m_reg8[0], 0x42, sizeof(m_reg8));
-        m_reg16[0] = 0xdead;
-        m_reg16[1] = 0xbeef;
-        m_reg16[2] = 0xdead;
-        m_reg16[3] = 0xbeef;
-        m_reg16[4] = 0xdead;
-        m_reg16[5] = 0xbeef;
+        Coroutine::operator()();
+        m_reg.r16[0] = 0xdead;
+        m_reg.r16[1] = 0xbeef;
+        m_reg.r16[2] = 0xdead;
+        m_reg.r16[3] = 0xbeef;
+        m_reg.r16[4] = 0xdead;
+        m_reg.r16[5] = 0xbeef;
         m_buf[2] = ' ';
         m_buf[3] = 0;
         m_buf[4] = ' ';
@@ -101,31 +337,28 @@ public:
 
         await(i2c_smbus_writec(0x1d, 0x20, 2, &config_20[0]));
         await(i2c_smbus_writec(0x1d, 0x24, 3, &config_24[0]));
-        await(i2c_smbus_readc(0x1d, 0x1f, 8, &m_reg8[0]));
-        puts("recvd = ");
-        for (uint8_t i = 0; i < 8; ++i) {
-            uint8_to_hex(m_reg8[i], m_buf);
-            puts(m_buf);
-        }
-        puts("\n");
-
-//        uint16_to_hex(DMA1_Channel7->CNDTR, m_buf);
-//        puts(m_buf);
+        await(i2c_smbus_readc(0x1d, 0x1f, 8, &m_reg.r8[0]));
+//        puts("recvd = ");
+//        for (uint8_t i = 0; i < 8; ++i) {
+//            uint8_to_hex(m_reg.r8[i], m_buf);
+//            puts(m_buf);
+//        }
 //        puts("\n");
-//        m_buf[2] = ' ';
-//        m_buf[3] = 0;
+        imu_timed_init();
+        imu_timed_enable();
 
-        while (1)
-        {
-            await(sleepc(1000, now));
-            await(i2c_smbus_readc(0x1d, 0x28, 3*2, (uint8_t*)&m_reg16[0]));
-            await(i2c_smbus_readc(0x1d, 0x08, 3*2, (uint8_t*)&m_reg16[3]));
-            puts("recvd = ");
-            for (uint8_t i = 0; i < 6; ++i) {
-                uint16_to_hex(m_reg16[i], m_buf);
-                puts(m_buf);
+        while (1) {
+            await(imu_timed_full_buffer(m_buffer));
+            await(usart2.tx_ready());
+            await(usart2.send_c((uint8_t*)m_buffer, IMU_BUFFER_LENGTH*sizeof(imu_data_point_t)));
+            await_call(m_accel_x_packer, *m_buffer, 0, m_packet_size, m_msg);
+            if (m_msg) {
+                // packet finished
+                await(usart2.tx_ready());
+                await(usart2.send_c((uint8_t*)m_msg, m_packet_size));
             }
         }
+
         COROUTINE_END;
     }
 };
@@ -138,7 +371,8 @@ void delay() {
 
 
 static BlinkLED blink;
-static I2CSensor sensor;
+//static I2CSensor sensor;
+static IMUStream stream;
 static Scheduler<2> scheduler;
 
 
@@ -183,6 +417,8 @@ int main() {
         | GPIO_CRL_MODE7_0 | GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0
         ;
 
+    I2C1->CR1 = 0;
+
     RCC->APB2ENR |= 0
         | RCC_APB2ENR_IOPAEN
         | RCC_APB2ENR_IOPBEN
@@ -200,10 +436,8 @@ int main() {
     RCC->AHBENR |= 0
             | RCC_AHBENR_DMA1EN;
 
-    USART2->BRR = 312;
-    USART2->CR1 = USART_CR1_UE | USART_CR1_TE;
-
-    I2C1->CR1 = 0;
+    usart2.init(115200, false);
+    usart2.enable();
 
     i2c_init();
     i2c_enable();
@@ -213,7 +447,7 @@ int main() {
     stm32_clock::enable();
 
     scheduler.add_task(&blink);
-    scheduler.add_task(&sensor);
+    scheduler.add_task(&stream);
 
     scheduler.run();
 
@@ -227,9 +461,10 @@ int main() {
 
 PUTCHAR_PROTOTYPE
 {
-    while (!(USART2->SR & USART_FLAG_TC));
+    /*while (!(USART2->SR & USART_FLAG_TC));
     USART2->DR = ch;
-    while (!(USART2->SR & USART_FLAG_TC));
+    while (!(USART2->SR & USART_FLAG_TC));*/
+    usart2.send((uint8_t*)&ch, 1);
     return ch;
 }
 

@@ -141,33 +141,32 @@ public:
                 if (!task.can_run_now(now)) {
                     continue;
                 }
-                if (task.can_run_now(now)) {
-                    task.condition = task.coro->step(now);
-                    switch (task.condition.type)
-                    {
-                    case WakeupCondition::TIMER:
-                    {
-                        add_timed_task(task);
-                        // intentional fallthrough
+
+                task.condition = task.coro->step(now);
+                switch (task.condition.type)
+                {
+                case WakeupCondition::TIMER:
+                {
+                    add_timed_task(task);
+                    // intentional fallthrough
+                }
+                case WakeupCondition::FINSIHED:
+                {
+                    if (iter != m_event_tasks_end-1) {
+                        std::swap(*iter, *(m_event_tasks_end-1));
                     }
-                    case WakeupCondition::FINSIHED:
-                    {
-                        if (iter != m_event_tasks_end-1) {
-                            std::swap(*iter, *(m_event_tasks_end-1));
-                        }
-                        iter--;
-                        m_event_tasks_end--;
-                        break;
-                    }
-                    case WakeupCondition::NONE:
-                    {
-                        // we must not sleep, NONE wants to run again
-                        // immediately
-                        sched_no_event_pending.clear();
-                        break;
-                    }
-                    case WakeupCondition::EVENT:;
-                    }
+                    iter--;
+                    m_event_tasks_end--;
+                    break;
+                }
+                case WakeupCondition::NONE:
+                {
+                    // we must not sleep, NONE wants to run again
+                    // immediately
+                    sched_no_event_pending.clear();
+                    break;
+                }
+                case WakeupCondition::EVENT:;
                 }
             }
 
