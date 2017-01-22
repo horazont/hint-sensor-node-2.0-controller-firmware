@@ -188,7 +188,7 @@ public:
 
 inline void set_pending_event()
 {
-    sched_no_event_pending.clear();
+    sched_no_event_pending.clear(std::memory_order_relaxed);
 }
 
 #endif // SCHEDULER_H

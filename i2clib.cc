@@ -1,6 +1,7 @@
 #include "i2clib.h"
 
 #include "utils.h"
+#include "notify.h"
 
 #define DMA_TX_CHANNEL DMA1_Channel6
 #define DMA_RX_CHANNEL DMA1_Channel7
@@ -17,7 +18,7 @@ struct i2c_task {
     uint8_t nbytes;
     uint8_t offset;
     enum i2c_state state;
-    volatile uint8_t notify;
+    notifier_t notify;
 
     union {
         uint8_t *w;
@@ -96,6 +97,10 @@ void i2c_init()
 
 void i2c_workaround_reset()
 {
+    if (!(I2C1->SR2 & I2C_SR2_BUSY)) {
+        // no workaround needed
+        return;
+    }
     i2c_disable();
 
     // configure as general-purpose open-drain outputs
@@ -154,7 +159,7 @@ static void _i2c_prep_smbus_read(const uint8_t device_address,
     curr_task.offset = 0;
     curr_task.buf.w = buf;
     curr_task.state = I2C_STATE_SELECT_REGISTER;
-    curr_task.notify = 1;
+    curr_task.notify.reset();
 
     DMA_RX_CHANNEL->CCR &= ~DMA_CCR1_EN;
     DMA_RX_CHANNEL->CMAR = (uint32_t)buf;
@@ -177,7 +182,7 @@ static void _i2c_prep_smbus_write(const uint8_t device_address,
     curr_task.offset = 0;
     curr_task.buf.r = buf;
     curr_task.state = I2C_STATE_SELECT_REGISTER;
-    curr_task.notify = 1;
+    curr_task.notify.reset();
 
     DMA_TX_CHANNEL->CCR &= ~DMA_CCR1_EN;
     DMA_TX_CHANNEL->CMAR = (uint32_t)buf;
@@ -213,7 +218,7 @@ ASYNC_CALLABLE i2c_smbus_readc(
         uint8_t *buf)
 {
     _i2c_prep_smbus_read(device_address, register_address, nbytes, buf);
-    return WakeupCondition::event(&curr_task.notify);
+    return curr_task.notify.ready_c();
 }
 
 ASYNC_CALLABLE i2c_smbus_writec(
@@ -223,7 +228,7 @@ ASYNC_CALLABLE i2c_smbus_writec(
         const uint8_t *buf)
 {
     _i2c_prep_smbus_write(device_address, register_address, nbytes, buf);
-    return WakeupCondition::event(&curr_task.notify);
+    return curr_task.notify.ready_c();
 }
 
 
@@ -273,7 +278,7 @@ void I2C1_EV_IRQHandler()
         } else if (curr_task.write_task) {
             // USART2->DR = 't';
             I2C1->CR1 |= I2C_CR1_STOP;
-            curr_task.notify = 0;
+            curr_task.notify.trigger();
         }
     } else if (sr1 & I2C_SR1_RXNE) {
         __ASM volatile("bkpt #06");
@@ -315,9 +320,9 @@ void DMA1_Channel7_IRQHandler()
     // for RX, I2C takes care of the STOP condition by itself
     const uint32_t flags = DMA1->ISR;
     if (flags & DMA_ISR_TCIF7) {
-        curr_task.notify = 0;
+        curr_task.notify.trigger();
     } else if (flags & DMA_ISR_TEIF7) {
-        curr_task.notify = 0;
+        curr_task.notify.trigger();
     }
     // clear all channel 7 interrupts
     DMA1->IFCR = DMA_IFCR_CHTIF7 | DMA_IFCR_CGIF7 | DMA_IFCR_CTCIF7 | DMA_IFCR_CTEIF7;

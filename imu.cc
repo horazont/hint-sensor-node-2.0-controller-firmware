@@ -3,8 +3,9 @@
 #include <stm32f10x.h>
 
 #include "i2clib.h"
+#include "notify.h"
 
-static std::array<volatile uint8_t, 2> _notifiers;
+static std::array<notifier_t, 2> _notifiers;
 static std::array<imu_buffer_t, 2> _buffers;
 static volatile uint_fast8_t _current_notifier;
 static uint_fast8_t _offset;
@@ -18,8 +19,6 @@ static constexpr uint8_t IMU_COMPASS_ADDRESS = 0x08;
 void imu_timed_init()
 {
     _current_notifier = 0;
-    _notifiers[0] = 1;
-    _notifiers[1] = 1;
     _offset = 0;
     _accel = true;
     _seq = 0;
@@ -44,16 +43,16 @@ ASYNC_CALLABLE imu_timed_full_buffer(const imu_buffer_t *&full_buffer)
 {
     uint_fast8_t curr_notifier = _current_notifier;
     full_buffer = &_buffers[curr_notifier];
-    return WakeupCondition::event(&_notifiers[curr_notifier]);
+    return _notifiers[curr_notifier].ready_c();
 }
 
 static void _swap_buffers()
 {
     uint_fast8_t curr_notifier = _current_notifier;
     _buffers[curr_notifier].seq = _seq++;
-    _notifiers[curr_notifier] = 0;
+    _notifiers[curr_notifier].trigger();
     curr_notifier ^= 1;
-    _notifiers[curr_notifier] = 1;
+    _notifiers[curr_notifier].reset();
     _current_notifier = curr_notifier;
     _offset = 0;
 }

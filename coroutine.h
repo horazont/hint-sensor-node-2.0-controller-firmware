@@ -64,7 +64,7 @@ struct WakeupCondition
 
     WakeupConditionType type;
     sched_clock::time_point wakeup_at;
-    volatile uint8_t *event_bits;
+    const volatile uint8_t *event_bits;
 
     inline static WakeupCondition finished()
     {
@@ -74,7 +74,7 @@ struct WakeupCondition
         return result;
     }
 
-    inline static WakeupCondition event(volatile uint8_t *event_bits)
+    inline static WakeupCondition event(const volatile uint8_t *event_bits)
     {
         WakeupCondition result;
         result.type = WakeupCondition::EVENT;

@@ -93,6 +93,7 @@ private:
 
     const sbx_msg_t **m_msg_out;
     uint8_t *m_packet_size_out;
+    uint16_t m_packet_samples;
 
     uint16_t m_average;
 
@@ -116,6 +117,7 @@ private:
         m_payload_size = 0;
         m_samples_used = 0;
         m_packet_pos = 0;
+        m_packet_samples = 0;
     }
 
     inline bool pack_sample(uint16_t sample)
@@ -149,6 +151,7 @@ private:
         }
 
         m_samples_used += 1;
+        m_packet_samples += 1;
 
         if (m_bitmap_bit == 0) {
             m_bitmap_bit = 7;
@@ -206,6 +209,11 @@ public:
         m_msg_out = &msg_out;
     }
 
+    inline uint8_t samples_in_msg() const
+    {
+        return m_packet_samples;
+    }
+
     COROUTINE_DECL
     {
         COROUTINE_INIT;
@@ -217,28 +225,18 @@ public:
         // we have a buffer, now what?
         // we need to pack the data, and we need to keep data which was
         // unpackable
-        m_average = (
+        /*m_average = (
                     m_previous_average_known ? m_previous_average : m_src_buffer->samples[0].accel_compass[m_src_offset]
-                    );
-        // m_average = (*m_src_buffer)[0].accel_compass[m_src_offset];
-//        {
-//            char buf[10];
-//            buf[8] = '\n';
-//            buf[9] = 0;
-//            uint32_to_hex(
-//                        (m_previous_average << 16) | (m_previous_average_known << 8),
-//                        buf);
-//            puts(buf);
-//        }
+                    );*/
+        m_average = m_src_buffer->samples[0].accel_compass[m_src_offset];
 
-        /*if (m_hangover_len) {
-//            puts("data in hangover buffer\n");
+        if (m_hangover_len) {
             for (m_i = 0; m_i < m_hangover_len; ++m_i) {
                 // hangover buffer is too small to cause a packet to be emitted
                 pack_sample(m_hangover_buffer[m_i]);
             }
             m_hangover_len = 0;
-        }*/
+        }
 
         m_samples_used = 0;
         for (m_i = 0; m_i < m_src_buffer->samples.size(); ++m_i)
@@ -252,16 +250,6 @@ public:
         {
             // there is enough room left for more data
             *m_msg_out = nullptr;
-//            puts("still room: ");
-//            {
-//                char buf[10];
-//                buf[8] = '\n';
-//                buf[9] = 0;
-//                uint32_to_hex(
-//                            m_samples_used | (m_payload_size << 8),
-//                            buf);
-//                puts(buf);
-//            }
             COROUTINE_RETURN;
         }
 
@@ -270,17 +258,6 @@ public:
             m_hangover_buffer[m_i] = m_src_buffer->samples[m_i].accel_compass[m_src_offset];
             m_hangover_len += 1;
         }
-
-//        puts("full: ");
-//        {
-//            char buf[10];
-//            buf[8] = '\n';
-//            buf[9] = 0;
-//            uint32_to_hex(
-//                        m_samples_used | (m_payload_size << 8),
-//                        buf);
-//            puts(buf);
-//        }
 
         yield;
         // TODO: fix dropping of unused samples!
@@ -297,12 +274,60 @@ private:
         uint8_t r8[8];
         uint16_t r16[6];
     } m_reg;
-    char m_buf[6];
+
+    struct channel_stats_t
+    {
+        uint16_t t0;
+        uint16_t bytes_sent;
+        uint16_t samples_sent;
+        uint16_t packets_sent;
+    };
+
+    char m_buf[100];
     const imu_buffer_t *m_buffer;
     PackBuffer m_packers[6];
+    channel_stats_t m_stats[6];
     uint8_t m_i;
+    uint16_t m_k;
     uint8_t m_packet_size;
     const sbx_msg_t *m_msg;
+    uint16_t m_len;
+
+private:
+    uint16_t format_stats(const uint8_t channel, const uint16_t t1)
+    {
+        channel_stats_t &stats = m_stats[channel];
+        const uint16_t bits_per_sample = ((uint32_t)stats.bytes_sent * 8) / (stats.samples_sent);
+
+        const uint16_t dt = t1 - stats.t0;
+
+        const uint16_t bytes_per_second1 = (stats.bytes_sent / (dt/1000));
+        const uint16_t bytes_per_second2 = ((uint32_t)stats.bytes_sent * 100) / (stats.samples_sent);
+        char *dest = &m_buf[0];
+        uint8_to_hex(channel, dest);
+        dest += 2;
+        *dest++ = ':';
+        *dest++ = ' ';
+        uint16_to_hex(stats.packets_sent, dest);
+        dest += 4;
+        *dest++ = ' ';
+        uint16_to_hex(bits_per_sample, dest);
+        dest += 4;
+        *dest++ = ' ';
+        uint16_to_hex(bytes_per_second1, dest);
+        dest += 4;
+        *dest++ = ' ';
+        uint16_to_hex(bytes_per_second2, dest);
+        dest += 4;
+        *dest++ = '\n';
+
+        stats.t0 = t1;
+        stats.packets_sent = 0;
+        stats.bytes_sent = 0;
+        stats.samples_sent = 0;
+
+        return dest - m_buf;
+    }
 
 public:
     void operator()()
@@ -318,6 +343,12 @@ public:
         m_buf[3] = 0;
         m_buf[4] = ' ';
         m_buf[5] = 0;
+
+        for (unsigned int i = 0; i < 6; ++i) {
+            m_stats[0].bytes_sent = 0;
+            m_stats[0].samples_sent = 0;
+            m_stats[0].packets_sent = 0;
+        }
     }
 
     COROUTINE_DECL
@@ -341,29 +372,43 @@ public:
         await(i2c_smbus_writec(0x1d, 0x20, 2, &config_20[0]));
         await(i2c_smbus_writec(0x1d, 0x24, 3, &config_24[0]));
         await(i2c_smbus_readc(0x1d, 0x1f, 8, &m_reg.r8[0]));
-//        puts("recvd = ");
-//        for (uint8_t i = 0; i < 8; ++i) {
-//            uint8_to_hex(m_reg.r8[i], m_buf);
-//            puts(m_buf);
-//        }
-//        puts("\n");
         imu_timed_init();
         imu_timed_enable();
 
-        await(usart2.tx_ready());
+        {
+            uint16_t t0 = sched_clock::now_raw();
+            for (unsigned int i = 0; i < 6; ++i) {
+                m_stats[i].t0 = t0;
+            }
+        }
+
+        m_k = 0;
+        await(usart3.tx_ready());
+        /*await(usart3.send_c(delimiter1, 2));
+        await(usart3.send_c(delimiter2, 2));*/
         while (1) {
             await(imu_timed_full_buffer(m_buffer));
-            /*await(usart2.send_c(delimiter1, 2));
-            await(usart2.send_c((uint8_t*)m_buffer, IMU_BUFFER_LENGTH*sizeof(imu_data_point_t)));
-            await(usart2.send_c(delimiter2, 2));*/
+            // await(usart3.send_c((uint8_t*)m_buffer, sizeof(imu_buffer_t)));
             for (m_i = 0; m_i < 6; ++m_i) {
                 await_call(m_packers[m_i], *m_buffer, m_i, m_packet_size, m_msg);
                 if (m_msg) {
                     // packet finished
-                    await(usart2.tx_ready());
-                    await(usart2.send_c((uint8_t*)m_msg, m_packet_size));
+                    await(usart3.tx_ready());
+                    await(usart3.send_c((uint8_t*)m_msg, m_packet_size));
+                    /*m_stats[m_i].packets_sent += 1;
+                    m_stats[m_i].bytes_sent += m_packet_size;
+                    m_stats[m_i].samples_sent += m_packers[m_i].samples_in_msg();*/
                 }
             }
+
+            /*m_k++;
+            if (m_k == 400) {
+                for (m_i = 0; m_i < 6; ++m_i) {
+                    m_len = format_stats(m_i, sched_clock::now_raw());
+                    await(usart3.send_c((const uint8_t*)m_buf, m_len));
+                }
+                m_k = 0;
+            }*/
         }
 
         COROUTINE_END;
@@ -384,7 +429,7 @@ static Scheduler<2> scheduler;
 
 
 int main() {
-    RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST | RCC_APB1RSTR_TIM4RST | RCC_APB1RSTR_I2C1RST;
+    RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST | RCC_APB1RSTR_TIM4RST | RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_USART2RST | RCC_APB1RSTR_USART3RST;
     RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST;
 
     delay();
@@ -393,58 +438,72 @@ int main() {
     RCC->APB2RSTR = 0;
 
     GPIOA->CRL =
-        GPIO_CRL_CNF0_0
-        | GPIO_CRL_CNF1_0
-        | GPIO_CRL_MODE2_1 | GPIO_CRL_CNF2_1
-        | GPIO_CRL_CNF3_0
-        | GPIO_CRL_CNF4_0
-        | GPIO_CRL_MODE5_1
-        | GPIO_CRL_CNF6_0
-        | GPIO_CRL_CNF7_0;
+            GPIO_CRL_CNF0_0
+            | GPIO_CRL_CNF1_0
+            | GPIO_CRL_MODE2_1 | GPIO_CRL_CNF2_1
+            | GPIO_CRL_CNF3_0
+            | GPIO_CRL_CNF4_0
+            | GPIO_CRL_MODE5_1
+            | GPIO_CRL_CNF6_0
+            | GPIO_CRL_CNF7_0;
     GPIOA->BSRR = GPIO_BSRR_BR5;
 
-    GPIOD->CRL =
-        GPIO_CRL_CNF0_0
-        | GPIO_CRL_CNF1_0
-        | GPIO_CRL_CNF2_0
-        | GPIO_CRL_CNF3_0
-        | GPIO_CRL_CNF4_0
-        | GPIO_CRL_CNF5_0
-        | GPIO_CRL_CNF6_0
-        | GPIO_CRL_CNF7_0;
-
     GPIOB->CRL =
-        GPIO_CRL_CNF0_0
-        | GPIO_CRL_CNF1_0
-        | GPIO_CRL_CNF2_0
-        | GPIO_CRL_CNF3_0
-        | GPIO_CRL_CNF4_0
-        | GPIO_CRL_CNF5_0
-        | GPIO_CRL_MODE6_0 | GPIO_CRL_CNF6_1 | GPIO_CRL_CNF6_0
-        | GPIO_CRL_MODE7_0 | GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0
-        ;
+            GPIO_CRL_CNF0_0
+            | GPIO_CRL_CNF1_0
+            | GPIO_CRL_CNF2_0
+            | GPIO_CRL_CNF3_0
+            | GPIO_CRL_CNF4_0
+            | GPIO_CRL_CNF5_0
+            | GPIO_CRL_MODE6_0 | GPIO_CRL_CNF6_1 | GPIO_CRL_CNF6_0
+            | GPIO_CRL_MODE7_0 | GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0
+            ;
+
+    GPIOB->CRH =
+            GPIO_CRH_CNF8_0
+            | GPIO_CRH_CNF9_0
+            | GPIO_CRH_MODE10_1 | GPIO_CRH_CNF10_1
+            | GPIO_CRH_CNF11_0
+            | GPIO_CRH_CNF12_0
+            | GPIO_CRH_CNF13_0
+            | GPIO_CRH_CNF14_0
+            | GPIO_CRH_CNF15_0;
+
+    GPIOD->CRL =
+            GPIO_CRL_CNF0_0
+            | GPIO_CRL_CNF1_0
+            | GPIO_CRL_CNF2_0
+            | GPIO_CRL_CNF3_0
+            | GPIO_CRL_CNF4_0
+            | GPIO_CRL_CNF5_0
+            | GPIO_CRL_CNF6_0
+            | GPIO_CRL_CNF7_0;
 
     I2C1->CR1 = 0;
 
     RCC->APB2ENR |= 0
-        | RCC_APB2ENR_IOPAEN
-        | RCC_APB2ENR_IOPBEN
-        | RCC_APB2ENR_IOPCEN
-        | RCC_APB2ENR_IOPDEN
-        | RCC_APB2ENR_IOPEEN
-        | RCC_APB2ENR_AFIOEN;
+            | RCC_APB2ENR_IOPAEN
+            | RCC_APB2ENR_IOPBEN
+            | RCC_APB2ENR_IOPCEN
+            | RCC_APB2ENR_IOPDEN
+            | RCC_APB2ENR_IOPEEN
+            | RCC_APB2ENR_AFIOEN;
     RCC->APB1ENR |= 0
-        | RCC_APB1ENR_TIM3EN
-        | RCC_APB1ENR_USART2EN
-        | RCC_APB1ENR_TIM2EN
-        | RCC_APB1ENR_TIM4EN
-        | RCC_APB1ENR_I2C1EN
-        ;
+            | RCC_APB1ENR_TIM3EN
+            | RCC_APB1ENR_USART2EN
+            | RCC_APB1ENR_USART3EN
+            | RCC_APB1ENR_TIM2EN
+            | RCC_APB1ENR_TIM4EN
+            | RCC_APB1ENR_I2C1EN
+            ;
     RCC->AHBENR |= 0
             | RCC_AHBENR_DMA1EN;
 
     usart2.init(115200, false);
     usart2.enable();
+
+    usart3.init(115200, false);
+    usart3.enable();
 
     i2c_init();
     i2c_enable();
