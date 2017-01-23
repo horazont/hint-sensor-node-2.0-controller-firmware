@@ -37,6 +37,24 @@ USART::USART(USART_TypeDef *usart,
                 ;
         m_tx_dma->CPAR = (uint32_t)&usart->DR;
     }
+    if (m_rx_dma) {
+        m_rx_dma->CCR = 0
+                // peripherial-to-memory mode
+                // high priority
+                | DMA_CCR1_PL_1
+                // byte memory size
+                // byte peripherial size
+                // enable memory increment mode
+                | DMA_CCR1_MINC
+                // disable peripherial increment mode
+                // disable circular mode
+                // read from peripherial
+                // enable full transfer and failed transfer interrupts
+                | DMA_CCR1_TCIE | DMA_CCR1_TEIE
+                // do not enable channel yet
+                ;
+        m_rx_dma->CPAR = (uint32_t)&usart->DR;
+    }
 }
 
 IRQn_Type USART::get_irqn(USART_TypeDef *usart)
@@ -183,6 +201,26 @@ void USART::sendch(const uint8_t ch)
     m_tx_idle_notify.trigger();
 }
 
+void USART::set_rx_callback(usart_rx_data_callback_t cb)
+{
+    m_rx_data_cb = cb;
+    m_usart->CR1 |= USART_CR1_RE | USART_CR1_RXNEIE;
+}
+
+void USART::recv_a(uint8_t *buf, const uint16_t len,
+                   usart_rx_done_callback_t cb)
+{
+    m_rx_dma->CCR &= ~DMA_CCR1_EN;
+    m_rx_dma->CMAR = (uint32_t)buf;
+    m_rx_dma->CNDTR = len;
+    m_rx_dma->CCR |= DMA_CCR1_EN;
+
+    // disable RX interrupt
+    m_usart->CR1 = (m_usart->CR1 & ~(USART_CR1_RXNEIE));
+    m_usart->CR3 |= USART_CR3_DMAR;
+    m_rx_done_cb = cb;
+}
+
 void USART::sendstr(const char *buf)
 {
     auto &sr = m_usart->SR;
@@ -212,11 +250,21 @@ static inline void irq_handler()
         if (sendv_item < USART::MAX_SENDV_POINTERS && usart_obj->m_tx_offset < len) {
             usart->DR = sendv[sendv_item].buf[usart_obj->m_tx_offset++];
             if (usart_obj->m_tx_offset == len) {
+                usart_obj->m_tx_offset = 0;
                 usart_obj->m_tx_sendv_item++;
             }
         } else if (sr & USART_SR_TC) {
+            // clear the TC bit
             usart->CR1 &= ~(USART_CR1_TE | USART_CR1_TXEIE | USART_CR1_TCIE);
+            usart->SR = ~USART_SR_TC;
             usart_obj->m_tx_idle_notify.trigger();
+        }
+    }
+    if (sr & USART_SR_RXNE) {
+        usart_rx_data_callback_t cb = usart_obj->m_rx_data_cb;
+        const uint8_t dr = usart->DR;
+        if (cb != nullptr) {
+            cb(dr);
         }
     }
 }
@@ -234,18 +282,34 @@ static inline void dma_irq_tx_handler()
         if (sendv_item < USART::MAX_SENDV_POINTERS && item.len > 0) {
             // there is another channel, lets proceed
             // disable TC bit by writing a 0 to it
-            usart_obj->m_usart->SR = 0;
+            usart_obj->m_usart->SR = ~USART_SR_TC;
             // disable DMA channel before changing parameters
             channel.CCR &= ~DMA_CCR1_EN;
             channel.CMAR = (uint32_t)item.buf;
             channel.CNDTR = item.len;
             channel.CCR |= DMA_CCR1_EN;
         } else {
-            usart_obj->m_usart->CR1 &= ~(USART_CR1_TE);
+            // we need to get notified on TC
+            usart_obj->m_usart->CR1 |= USART_CR1_TCIE;
             usart_obj->m_usart->CR3 &= ~(USART_CR3_DMAT);
             channel.CCR &= ~DMA_CCR1_EN;
-            usart_obj->m_tx_idle_notify.trigger();
         }
+    } else if (sr & (DMA_ISR_TEIF1 << channel_shift)) {
+
+    }
+    DMA1->IFCR = (DMA_IFCR_CHTIF1 | DMA_IFCR_CGIF1 | DMA_IFCR_CTCIF1 | DMA_IFCR_CTEIF1) << channel_shift;
+}
+
+template <USART *usart_obj, uint32_t channel_addr, uint32_t channel_shift>
+static inline void dma_irq_rx_handler()
+{
+    DMA_Channel_TypeDef &channel = *(DMA_Channel_TypeDef*)channel_addr;
+    const uint32_t sr = DMA1->ISR;
+    if (sr & (DMA_ISR_TCIF1 << channel_shift)) {
+        usart_obj->m_usart->CR1 |= USART_CR1_RXNEIE;
+        usart_obj->m_usart->CR3 &= ~(USART_CR3_DMAR);
+        channel.CCR &= ~DMA_CCR1_EN;
+        usart_obj->m_rx_done_cb();
     } else if (sr & (DMA_ISR_TEIF1 << channel_shift)) {
 
     }
@@ -276,5 +340,6 @@ void DMA1_Channel2_IRQHandler()
 
 void DMA1_Channel3_IRQHandler()
 {
-
+    // USART3 RX
+    dma_irq_rx_handler<&usart3, (uint32_t)DMA1_Channel3, 8>();
 }

@@ -12,6 +12,7 @@
 #include "scheduler.h"
 #include "imu.h"
 #include "comm_sbx.h"
+#include "comm_xbee.h"
 #include "usart.h"
 
 #define STACK_TOP (void*)(0x20002000)
@@ -41,6 +42,9 @@ void MemManage_Handler()
 }
 
 
+using CommInterface = CommXBEE;
+
+
 class BlinkLED: public Coroutine
 {
 public:
@@ -68,20 +72,13 @@ class PackBuffer: public Coroutine
 public:
     PackBuffer():
         Coroutine(),
-        m_previous_average_known(false),
         m_need_reset(true),
-        m_average_accum(0),
-        m_average_accum_ctr(0),
         m_hangover_len(0)
     {
     }
 
 private:
-    bool m_previous_average_known;
     bool m_need_reset;
-    uint16_t m_previous_average;
-    int32_t m_average_accum;
-    uint16_t m_average_accum_ctr;
 
     std::array<uint16_t, IMU_BUFFER_LENGTH> m_hangover_buffer;
     uint_fast8_t m_hangover_len;
@@ -91,7 +88,7 @@ private:
     const imu_buffer_t *m_src_buffer;
     uint_fast8_t m_src_offset;
 
-    const sbx_msg_t **m_msg_out;
+    sbx_msg_t *m_msg_out;
     uint8_t *m_packet_size_out;
     uint16_t m_packet_samples;
 
@@ -111,7 +108,6 @@ private:
     inline void reset()
     {
         memset(&m_bitmap_buffer[0], 0, m_bitmap_buffer.size());
-        memset(&m_packet_buffer[0], 0, m_packet_buffer.size());
         m_bitmap_bit = 7;
         m_bitmap_byte = 0;
         m_payload_size = 0;
@@ -122,8 +118,6 @@ private:
 
     inline bool pack_sample(uint16_t sample)
     {
-        m_average_accum += (int16_t)sample;
-        m_average_accum_ctr += 1;
         const uint16_t value = sample - m_average;
         const int16_t svalue = (int16_t)value;
 
@@ -165,33 +159,24 @@ private:
 
     inline void finish_packet()
     {
-        m_previous_average_known = m_average_accum_ctr > 0;
-        if (m_previous_average_known) {
-            m_previous_average = (uint16_t)(m_average_accum / m_average_accum_ctr);
-        }
-        m_average_accum = 0;
-        m_average_accum_ctr = 0;
-
         const uint8_t bitmap_len = (m_bitmap_bit == 7 ? m_bitmap_byte : m_bitmap_byte+1);
         // const uint8_t total_len = bitmap_len + m_packet_pos + 2;
-        sbx_msg_t &msg = *reinterpret_cast<sbx_msg_t*>(&m_packet_buffer.front());
-        memmove(&msg.payload.sensor_stream.data[bitmap_len],
-                &m_packet_buffer[0],
-                m_packet_pos);
-        memcpy(&msg.payload.sensor_stream.data[0],
-                &m_bitmap_buffer[0],
-                bitmap_len);
-        msg.type = static_cast<sbx_msg_type>(
+        m_msg_out->type = static_cast<sbx_msg_type>(
                     static_cast<uint8_t>(sbx_msg_type::SENSOR_STREAM_ACCEL_X) +
                     m_src_offset);
-        msg.payload.sensor_stream.seq = m_src_buffer->seq;
-        msg.payload.sensor_stream.average = m_average;
+        m_msg_out->payload.sensor_stream.seq = m_src_buffer->seq;
+        m_msg_out->payload.sensor_stream.average = m_average;
+        memcpy(&m_msg_out->payload.sensor_stream.data[0],
+                &m_bitmap_buffer[0],
+                bitmap_len);
+        memcpy(&m_msg_out->payload.sensor_stream.data[bitmap_len],
+               &m_packet_buffer[0],
+                m_packet_pos);
 
         *m_packet_size_out =
                 bitmap_len + m_packet_pos +
                 sizeof(sbx_msg_type) +
                 sizeof(sbx_msg_sensor_stream_t);
-        *m_msg_out = &msg;
 
         m_need_reset = true;
     }
@@ -200,7 +185,7 @@ public:
     void operator()(const imu_buffer_t &buffer,
                     const uint_fast8_t src_offset,
                     uint8_t &packet_size_out,
-                    const sbx_msg_t *&msg_out)
+                    sbx_msg_t &msg_out)
     {
         Coroutine::operator()();
         m_src_buffer = &buffer;
@@ -220,22 +205,19 @@ public:
         if (m_need_reset) {
             reset();
             m_need_reset = false;
-        }
 
-        // we have a buffer, now what?
-        // we need to pack the data, and we need to keep data which was
-        // unpackable
-        /*m_average = (
-                    m_previous_average_known ? m_previous_average : m_src_buffer->samples[0].accel_compass[m_src_offset]
-                    );*/
-        m_average = m_src_buffer->samples[0].accel_compass[m_src_offset];
+            // we have a buffer, now what?
+            // we need to pack the data, and we need to keep data which was
+            // unpackable
+            m_average = m_src_buffer->samples[0].accel_compass[m_src_offset];
 
-        if (m_hangover_len) {
-            for (m_i = 0; m_i < m_hangover_len; ++m_i) {
-                // hangover buffer is too small to cause a packet to be emitted
-                pack_sample(m_hangover_buffer[m_i]);
+            if (m_hangover_len) {
+                for (m_i = 0; m_i < m_hangover_len; ++m_i) {
+                    // hangover buffer is too small to cause a packet to be emitted
+                    pack_sample(m_hangover_buffer[m_i]);
+                }
+                m_hangover_len = 0;
             }
-            m_hangover_len = 0;
         }
 
         m_samples_used = 0;
@@ -245,22 +227,22 @@ public:
                 break;
             }
         }
+
         if (m_samples_used == m_src_buffer->samples.size() &&
                 m_payload_size < SENSOR_STREAM::MAX_ENCODED_SAMPLE_BYTES-3)
         {
             // there is enough room left for more data
-            *m_msg_out = nullptr;
+            m_packet_size_out = 0;
             COROUTINE_RETURN;
         }
 
         m_hangover_len = 0;
         for (m_i = m_samples_used; m_i < m_src_buffer->samples.size(); ++m_i) {
-            m_hangover_buffer[m_i] = m_src_buffer->samples[m_i].accel_compass[m_src_offset];
+            m_hangover_buffer[m_i-m_samples_used] = m_src_buffer->samples[m_i].accel_compass[m_src_offset];
             m_hangover_len += 1;
         }
 
         yield;
-        // TODO: fix dropping of unused samples!
         finish_packet();
         COROUTINE_END;
     }
@@ -269,6 +251,16 @@ public:
 
 class IMUStream: public Coroutine
 {
+public:
+    explicit IMUStream(CommInterface &comm):
+        m_comm(comm)
+    {
+
+    }
+
+private:
+    CommInterface &m_comm;
+
 private:
     union {
         uint8_t r8[8];
@@ -283,15 +275,21 @@ private:
         uint16_t packets_sent;
     };
 
+    struct channel_buffer_t
+    {
+        CommInterface::buffer_t::buffer_handle_t m_msg_handle;
+        uint8_t m_packet_size;
+        uint8_t *m_msg;
+        uint16_t m_len;
+    };
+
     char m_buf[100];
     const imu_buffer_t *m_buffer;
     PackBuffer m_packers[6];
     channel_stats_t m_stats[6];
+    channel_buffer_t m_buffers[6];
     uint8_t m_i;
     uint16_t m_k;
-    uint8_t m_packet_size;
-    const sbx_msg_t *m_msg;
-    uint16_t m_len;
 
 private:
     uint16_t format_stats(const uint8_t channel, const uint16_t t1)
@@ -379,6 +377,7 @@ public:
             uint16_t t0 = sched_clock::now_raw();
             for (unsigned int i = 0; i < 6; ++i) {
                 m_stats[i].t0 = t0;
+                m_buffers[i].m_msg_handle = CommInterface::buffer_t::INVALID_BUFFER;
             }
         }
 
@@ -387,17 +386,31 @@ public:
         /*await(usart3.send_c(delimiter1, 2));
         await(usart3.send_c(delimiter2, 2));*/
         while (1) {
+            for (m_i = 0; m_i < 6; ++m_i) {
+                while (m_buffers[m_i].m_msg_handle == CommInterface::buffer_t::INVALID_BUFFER) {
+                    await(m_comm.output_buffer().any_buffer_free());
+                    m_buffers[m_i].m_msg_handle = m_comm.output_buffer().allocate(
+                                m_buffers[m_i].m_msg,
+                                CommInterface::buffer_t::BUFFER_SIZE,
+                                PRIO_NO_RETRIES);
+                }
+            }
             await(imu_timed_full_buffer(m_buffer));
             // await(usart3.send_c((uint8_t*)m_buffer, sizeof(imu_buffer_t)));
             for (m_i = 0; m_i < 6; ++m_i) {
-                await_call(m_packers[m_i], *m_buffer, m_i, m_packet_size, m_msg);
-                if (m_msg) {
+                await_call(m_packers[m_i], *m_buffer, m_i, m_buffers[m_i].m_packet_size,
+                           *(sbx_msg_t*)m_buffers[m_i].m_msg);
+                if (m_buffers[m_i].m_packet_size) {
                     // packet finished
-                    await(usart3.tx_ready());
-                    await(usart3.send_c((uint8_t*)m_msg, m_packet_size));
+                    //await(usart3.tx_ready());
+                    //await(usart3.send_c((uint8_t*)m_msg, m_packet_size));
                     /*m_stats[m_i].packets_sent += 1;
                     m_stats[m_i].bytes_sent += m_packet_size;
                     m_stats[m_i].samples_sent += m_packers[m_i].samples_in_msg();*/
+                    m_comm.output_buffer().set_ready(
+                                m_buffers[m_i].m_msg_handle,
+                                m_buffers[m_i].m_packet_size);
+                    m_buffers[m_i].m_msg_handle = CommInterface::buffer_t::INVALID_BUFFER;
                 }
             }
 
@@ -424,8 +437,9 @@ void delay() {
 
 static BlinkLED blink;
 //static I2CSensor sensor;
-static IMUStream stream;
-static Scheduler<2> scheduler;
+static CommInterface comm(usart3);
+static IMUStream stream(comm);
+static Scheduler<3> scheduler;
 
 
 int main() {
@@ -514,6 +528,7 @@ int main() {
 
     scheduler.add_task(&blink);
     scheduler.add_task(&stream);
+    scheduler.add_task(&comm);
 
     scheduler.run();
 

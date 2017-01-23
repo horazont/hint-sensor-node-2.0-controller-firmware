@@ -9,7 +9,7 @@
 
 typedef stm32_clock sched_clock;
 
-#define COROUTINE_INIT         switch(m_state_line) { case 0:
+#define COROUTINE_INIT         (void)now; switch(m_state_line) { case 0:
 #define COROUTINE_RETURN       return WakeupCondition::finished()
 #define COROUTINE_END          } COROUTINE_RETURN;
 

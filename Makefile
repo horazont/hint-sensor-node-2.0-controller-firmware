@@ -18,7 +18,7 @@ headers = $(wildcard *.h)
 obj_dir = .objs/
 c_objs = $(patsubst %.c,$(obj_dir)%.o,$(c_sources))
 cxx_objs = $(patsubst %.cc,$(obj_dir)%.o,$(cxx_sources))
-objs = $(filter-out $(obj_dir)comm_%.o,$(c_objs) $(cxx_objs))
+objs = $(c_objs) $(cxx_objs)
 
 startup_file_src = startup_stm32f10x_md.s
 startup_file_obj = $(patsubst %.s,$(obj_dir)%.o,$(startup_file_src))

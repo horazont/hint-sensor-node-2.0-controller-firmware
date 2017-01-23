@@ -16,6 +16,9 @@ void DMA1_Channel2_IRQHandler();
 void DMA1_Channel3_IRQHandler();
 }
 
+using usart_rx_data_callback_t = void(*)(const uint8_t ch);
+using usart_rx_done_callback_t = void(*)();
+
 class USART
 {
 public:
@@ -65,6 +68,9 @@ private:
     uint16_t m_tx_offset;
     sendv_array_t m_tx_sendv;
 
+    usart_rx_data_callback_t m_rx_data_cb;
+    usart_rx_done_callback_t m_rx_done_cb;
+
 private:
     inline void start_async_tx()
     {
@@ -90,10 +96,25 @@ public:
     void sendstr(const char *buf);
     void sendch(const uint8_t ch);
 
+    void set_rx_callback(usart_rx_data_callback_t cb);
+
+    /**
+     * Setup a receive buffer for reception via DMA.
+     *
+     * This is only available for USARTS which have DMA enabled.
+     *
+     * @param buf Buffer to write to.
+     * @param len Length of the buffer.
+     */
+    void recv_a(uint8_t *buf, const uint16_t len,
+                usart_rx_done_callback_t cb);
+
     template <USART *usart_obj>
     friend void irq_handler();
     template <USART *usart_obj, uint32_t channel, uint32_t channel_shift>
     friend void dma_irq_tx_handler();
+    template <USART *usart_obj, uint32_t channel, uint32_t channel_shift>
+    friend void dma_irq_rx_handler();
 };
 
 extern USART usart1;
