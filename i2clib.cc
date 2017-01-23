@@ -193,7 +193,27 @@ static void _i2c_prep_smbus_write(const uint8_t device_address,
     I2C1->CR1 |= I2C_CR1_START;
 }
 
-bool i2c_smbus_read(const uint8_t device_address,
+void i2c_smbus_read(
+        const uint8_t device_address,
+        const uint8_t register_address,
+        const uint8_t nbytes,
+        uint8_t *buf)
+{
+    _i2c_prep_smbus_read(device_address, register_address, nbytes, buf);
+    curr_task.notify.wait_for_ready();
+}
+
+void i2c_smbus_write(
+        const uint8_t device_address,
+        const uint8_t register_address,
+        const uint8_t nbytes,
+        const uint8_t *buf)
+{
+    _i2c_prep_smbus_write(device_address, register_address, nbytes, buf);
+    curr_task.notify.wait_for_ready();
+}
+
+bool i2c_smbus_read_a(const uint8_t device_address,
                     const uint8_t register_address,
                     const uint8_t nbytes,
                     uint8_t *buf)
@@ -202,7 +222,7 @@ bool i2c_smbus_read(const uint8_t device_address,
     return true;
 }
 
-bool i2c_smbus_write(const uint8_t device_address,
+bool i2c_smbus_write_a(const uint8_t device_address,
                      const uint8_t register_address,
                      const uint8_t nbytes,
                      const uint8_t *buf)

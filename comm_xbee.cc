@@ -134,8 +134,8 @@ ASYNC_CALLABLE CommXBEE::step(const sched_clock::time_point now)
         m_tx_handle = buffer_t::INVALID_BUFFER;
 
         // wait for TX status
-        //await(m_rx_packet_ready.ready_c());
-        //m_rx_packet_ready.reset();
+        await(m_rx_packet_ready.ready_c());
+        m_rx_packet_ready.reset();
     }
     COROUTINE_END;
 }

@@ -46,6 +46,11 @@ public:
         return WakeupCondition::event(&m_field);
     }
 
+    inline void wait_for_ready() const
+    {
+        while (!ready());
+    }
+
 };
 
 #endif // NOTIFY_H

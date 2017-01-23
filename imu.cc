@@ -73,12 +73,12 @@ void TIM4_IRQHandler()
 
     imu_buffer_t &buffer = _curr_buffer();
     if (_accel) {
-        i2c_smbus_read(IMU_DEVICE_ADDRESS, IMU_ACCEL_ADDRESS,
+        i2c_smbus_read_a(IMU_DEVICE_ADDRESS, IMU_ACCEL_ADDRESS,
                        3*sizeof(uint16_t),
                        (uint8_t*)&buffer.samples[_offset].accel_compass[0]);
         _accel = !_accel;
     } else {
-        i2c_smbus_read(IMU_DEVICE_ADDRESS, IMU_COMPASS_ADDRESS,
+        i2c_smbus_read_a(IMU_DEVICE_ADDRESS, IMU_COMPASS_ADDRESS,
                        3*sizeof(uint16_t),
                        (uint8_t*)&buffer.samples[_offset].accel_compass[3]);
         _accel = !_accel;
