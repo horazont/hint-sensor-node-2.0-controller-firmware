@@ -407,7 +407,7 @@ static Scheduler<10> scheduler;
 
 int main() {
     RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST | RCC_APB1RSTR_TIM4RST | RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_USART2RST | RCC_APB1RSTR_USART3RST;
-    RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST;
+    RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST | RCC_APB2RSTR_TIM1RST;
     DMA1->IFCR = 0xfffffff;  // clear all the interrupt flags
 
     delay();
@@ -459,14 +459,16 @@ int main() {
 
     I2C1->CR1 = 0;
 
-    RCC->APB2ENR |= 0
+    RCC->APB2ENR = 0
             | RCC_APB2ENR_IOPAEN
             | RCC_APB2ENR_IOPBEN
             | RCC_APB2ENR_IOPCEN
             | RCC_APB2ENR_IOPDEN
             | RCC_APB2ENR_IOPEEN
             | RCC_APB2ENR_AFIOEN;
-    RCC->APB1ENR |= 0
+    RCC->APB1ENR = 0
+            | RCC_APB1ENR_PWREN
+            | RCC_APB1ENR_BKPEN
             | RCC_APB1ENR_TIM3EN
             | RCC_APB1ENR_USART2EN
             | RCC_APB1ENR_USART3EN
@@ -478,15 +480,12 @@ int main() {
             | RCC_AHBENR_DMA1EN;
 
     usart2.init(115200);
-    usart2.enable();
-
     usart3.init(115200, true); // enable support for CTS
-    usart3.enable();
-
     ls_freq_init();
-    ls_freq_enable();
-
+    imu_timed_init();
+    stm32_clock::init();
     i2c_init();
+
     i2c_enable();
     i2c_workaround_reset();
 
@@ -505,10 +504,10 @@ int main() {
     i2c_smbus_write(0x1d, 0x20, 2, &config_20[0]);
     i2c_smbus_write(0x1d, 0x24, 3, &config_24[0]);
 
-    imu_timed_init();
+    usart2.enable();
+    usart3.enable();
+    ls_freq_enable();
     imu_timed_enable();
-
-    stm32_clock::init();
     stm32_clock::enable();
 
     scheduler.add_task(&blink);
