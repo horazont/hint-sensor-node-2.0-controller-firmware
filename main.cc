@@ -344,6 +344,9 @@ public:
 private:
     CommInterface &m_comm;
     sbx_msg_status_t m_tmp;
+    sched_clock::time_point m_last_wakeup;
+    CommInterface::buffer_t::buffer_handle_t m_handle;
+    sbx_msg_t *m_buf;
 
 public:
     void operator()() {
@@ -354,41 +357,31 @@ public:
     {
         COROUTINE_INIT;
         while (1) {
-            m_tmp.rtc = -1;  // TODO
+            m_last_wakeup = now;
+            m_tmp.rtc = stm32_rtc::now_raw();
             m_tmp.uptime = sched_clock::now_raw();
             m_tmp.xbee_status.rx_errors = m_comm.rx_errors();
             m_tmp.xbee_status.rx_overruns = m_comm.rx_overruns();
             m_tmp.xbee_status.tx_non_acked = -1;  // TODO
             m_tmp.xbee_status.tx_retries = -1;  // TODO
             m_tmp.core_status.undervoltage_detected = 0;  // TODO
-            await(m_comm.output_buffer().any_buffer_free());
-            {
-                CommInterface::buffer_t::buffer_handle_t handle;
-                sbx_msg_t *buf;
-                do {
-                    handle = m_comm.output_buffer().allocate(
-                                *(uint8_t**)&buf,
-                                sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t)
-                                );
-                } while (handle == CommInterface::buffer_t::INVALID_BUFFER);
-                buf->type = sbx_msg_type::STATUS;
-                memcpy(&buf->payload.status,
-                       &m_tmp,
-                       sizeof(sbx_msg_status_t));
-                m_comm.output_buffer().set_ready(handle);
-            }
-            await(sleep_c(10000, now));
+            do {
+                await(m_comm.output_buffer().any_buffer_free());
+                m_handle = m_comm.output_buffer().allocate(
+                            *(uint8_t**)&m_buf,
+                            sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t)
+                            );
+            } while (m_handle == CommInterface::buffer_t::INVALID_BUFFER);
+            m_buf->type = sbx_msg_type::STATUS;
+            memcpy(&m_buf->payload.status,
+                   &m_tmp,
+                   sizeof(sbx_msg_status_t));
+            m_comm.output_buffer().set_ready(m_handle);
+            await(sleep_c(10000, m_last_wakeup));
         }
         COROUTINE_END;
     }
 };
-
-
-void delay() {
-    for (uint32_t i = 0; i < 800000; ++i) {
-        __asm__ volatile("nop");
-    }
-}
 
 
 static BlinkLED blink;
@@ -410,7 +403,10 @@ int main() {
     RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST | RCC_APB2RSTR_TIM1RST;
     DMA1->IFCR = 0xfffffff;  // clear all the interrupt flags
 
-    delay();
+    // give it a moment to reset
+    for (uint32_t i = 0; i < 1000; ++i) {
+        __asm__ volatile("nop");
+    }
 
     RCC->APB1RSTR = 0;
     RCC->APB2RSTR = 0;
@@ -476,7 +472,9 @@ int main() {
             | RCC_APB1ENR_TIM4EN
             | RCC_APB1ENR_I2C1EN
             ;
-    RCC->AHBENR |= 0
+    RCC->AHBENR = 0
+            | RCC_AHBENR_FLITFEN
+            | RCC_AHBENR_SRAMEN
             | RCC_AHBENR_DMA1EN;
 
     usart2.init(115200);
@@ -484,6 +482,7 @@ int main() {
     ls_freq_init();
     imu_timed_init();
     stm32_clock::init();
+    // stm32_rtc::init();
     i2c_init();
 
     i2c_enable();
@@ -509,6 +508,7 @@ int main() {
     ls_freq_enable();
     imu_timed_enable();
     stm32_clock::enable();
+    // stm32_rtc::enable();
 
     scheduler.add_task(&blink);
     scheduler.add_task(&stream_ax, 0);
@@ -533,17 +533,11 @@ int main() {
 
 PUTCHAR_PROTOTYPE
 {
-    /*while (!(USART2->SR & USART_FLAG_TC));
-    USART2->DR = ch;
-    while (!(USART2->SR & USART_FLAG_TC));*/
     usart2.send((uint8_t*)&ch, 1);
     return ch;
 }
 
 int puts(const char *s) {
-    while (*s != 0) {
-        __io_putchar(*s);
-        s++;
-    }
+    usart2.sendstr(s);
     return 0;
 }

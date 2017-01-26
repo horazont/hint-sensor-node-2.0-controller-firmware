@@ -36,7 +36,7 @@ enum class sbx_msg_type: std::uint8_t
 
 
 typedef std::uint16_t sbx_uptime_t;
-typedef std::uint64_t sbx_rtc_t;
+typedef std::uint32_t sbx_rtc_t;
 
 struct COMM_PACKED sbx_msg_sensor_stream_t
 {

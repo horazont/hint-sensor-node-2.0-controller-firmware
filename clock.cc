@@ -5,6 +5,12 @@
 static volatile uint16_t m_now = 0;
 
 
+static inline void _rtc_wait_for_write()
+{
+    while (!(RTC->CRL & RTC_CRL_RTOFF));
+}
+
+
 void SysTick_Handler()
 {
     m_now += 1;
@@ -28,6 +34,35 @@ void stm32_clock::init()
 void stm32_clock::enable()
 {
 }
+
+
+uint32_t stm32_rtc::now_raw()
+{
+    return (RTC->CNTH << 16) | RTC->CNTL;
+}
+
+void stm32_rtc::init()
+{
+    PWR->CR |= PWR_CR_DBP;
+    RCC->BDCR = (RCC->BDCR & ~(RCC_BDCR_RTCSEL))
+            | RCC_BDCR_RTCSEL_HSE
+            | RCC_BDCR_RTCEN;
+
+    _rtc_wait_for_write();
+    // enter configuration mode
+    RTC->CRL |= RTC_CRL_CNF;
+    RTC->PRLH = 0;
+    // we are fast by 0.8%
+    RTC->PRLL = 61;
+    RTC->CRL &= ~RTC_CRL_CNF;
+    _rtc_wait_for_write();
+}
+
+void stm32_rtc::enable()
+{
+
+}
+
 
 void usleep(uint32_t us)
 {

@@ -91,6 +91,15 @@ struct stm32_clock
   static void enable() noexcept;
 };
 
+
+struct stm32_rtc
+{
+    static uint32_t now_raw() noexcept;
+
+    static void init() noexcept;
+    static void enable() noexcept;
+};
+
 void usleep(uint32_t us);
 
 /**
