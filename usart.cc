@@ -268,7 +268,7 @@ static inline void irq_handler()
         usart_rx_data_callback_t cb = usart_obj->m_rx_data_cb;
         const uint8_t dr = usart->DR;
         if (cb != nullptr) {
-            cb(dr);
+            cb(dr, sr);
         }
     }
 }
@@ -313,9 +313,12 @@ static inline void dma_irq_rx_handler()
         usart_obj->m_usart->CR1 |= USART_CR1_RXNEIE;
         usart_obj->m_usart->CR3 &= ~(USART_CR3_DMAR);
         channel.CCR &= ~DMA_CCR1_EN;
-        usart_obj->m_rx_done_cb();
+        usart_obj->m_rx_done_cb(true);
     } else if (sr & (DMA_ISR_TEIF1 << channel_shift)) {
-
+        usart_obj->m_usart->CR1 |= USART_CR1_RXNEIE;
+        usart_obj->m_usart->CR3 &= ~(USART_CR3_DMAR);
+        channel.CCR &= ~DMA_CCR1_EN;
+        usart_obj->m_rx_done_cb(false);
     }
     DMA1->IFCR = (DMA_IFCR_CHTIF1 | DMA_IFCR_CGIF1 | DMA_IFCR_CTCIF1 | DMA_IFCR_CTEIF1) << channel_shift;
 }

@@ -56,6 +56,8 @@ private:
     uint8_t m_rx_frame_type;
     uint8_t m_rx_frame_id;
     uint8_t m_rx_checksum;
+    uint16_t m_rx_overruns;
+    uint16_t m_rx_errors;
     notifier_t m_rx_packet_ready;
     std::array<uint8_t, 128> m_rx_buffer;
     bool m_rx_spurious_rxneie;
@@ -74,8 +76,8 @@ public:
 
     COROUTINE_DECL;
 
-    friend void _xbee_usart_rx_data_cb(const uint8_t ch);
-    friend void _xbee_usart_rx_done_cb();
+    friend void _xbee_usart_rx_data_cb(const uint8_t ch, const uint16_t sr);
+    friend void _xbee_usart_rx_done_cb(bool success);
 };
 
 #endif // COMM_XBEE_H

@@ -7,14 +7,24 @@
 static CommXBEE *_xbee;
 
 
-void _xbee_usart_rx_done_cb()
+void _xbee_usart_rx_done_cb(bool success)
 {
-    _xbee->m_rx_state = CommXBEE::RX_FRAME_CHECKSUM;
+    if (success) {
+        _xbee->m_rx_state = CommXBEE::RX_FRAME_CHECKSUM;
+    } else {
+        _xbee->m_rx_errors += 1;
+        _xbee->m_rx_state = CommXBEE::RX_IDLE;
+    }
 }
 
 
-void _xbee_usart_rx_data_cb(const uint8_t ch)
+void _xbee_usart_rx_data_cb(const uint8_t ch, const uint16_t sr)
 {
+    if (sr & USART_SR_FE || sr & USART_SR_NE) {
+        _xbee->m_rx_errors += 1;
+        _xbee->m_rx_state = CommXBEE::RX_IDLE;
+        return;
+    }
     switch (_xbee->m_rx_state) {
     case CommXBEE::RX_IDLE:
     {
@@ -33,6 +43,15 @@ void _xbee_usart_rx_data_cb(const uint8_t ch)
     case CommXBEE::RX_FRAME_LENGTH_LSB:
     {
         _xbee->m_rx_length |= ch;
+        if (_xbee->m_rx_length > 128) {
+            // this is most likely a lost byte, and we somehow locked onto
+            // a part of another packet, which can happen in rare cases.
+            // we should abort reception immediately and wait for the next
+            // packet to lock at.
+            _xbee->m_rx_overruns += 1;
+            _xbee->m_rx_state = CommXBEE::RX_IDLE;
+            break;
+        }
         _xbee->m_rx_state = CommXBEE::RX_FRAME_TYPE;
         break;
     }
@@ -84,7 +103,9 @@ CommXBEE::CommXBEE(USART &usart):
     m_usart(usart),
     m_buffer(),
     m_tx_curr_buf(0),
-    m_tx_prev_buf(1)
+    m_tx_prev_buf(1),
+    m_rx_overruns(0),
+    m_rx_errors(0)
 {
     for (tx_info_t &info: m_tx) {
         info.handle = buffer_t::INVALID_BUFFER;

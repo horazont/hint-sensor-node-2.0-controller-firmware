@@ -16,8 +16,8 @@ void DMA1_Channel2_IRQHandler();
 void DMA1_Channel3_IRQHandler();
 }
 
-using usart_rx_data_callback_t = void(*)(const uint8_t ch);
-using usart_rx_done_callback_t = void(*)();
+using usart_rx_data_callback_t = void(*)(const uint8_t ch, const uint16_t sr);
+using usart_rx_done_callback_t = void(*)(bool success);
 
 class USART
 {
