@@ -30,7 +30,8 @@ void imu_timed_init()
 
     // 5ms period -- we read the accelerometer and compass alternatingly
     TIM4->PSC = 1000;
-    TIM4->ARR = 180;
+    // those fucking timer clocks are doubled!
+    TIM4->ARR = 360;
 }
 
 void imu_timed_enable()
