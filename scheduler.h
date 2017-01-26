@@ -59,43 +59,28 @@ private:
 public:
     Scheduler():
         m_tasks(),
-        m_timed_tasks(),
-        m_timed_tasks_end(m_timed_tasks.begin()),
-        m_event_tasks(),
-        m_event_tasks_end(m_event_tasks.begin())
+        m_tasks_end(m_tasks.begin())
     {
 
     }
 
 private:
     TaskArray m_tasks;
-    TaskPArray m_timed_tasks;
-    typename TaskPArray::iterator m_timed_tasks_end;
-    TaskPArray m_event_tasks;
-    typename TaskPArray::iterator m_event_tasks_end;
-
-private:
-    void add_timed_task(Task &task)
-    {
-        *m_timed_tasks_end++ = &task;
-        std::push_heap(m_timed_tasks.begin(), m_timed_tasks_end, &timed_task_cmp);
-    }
+    typename TaskArray::iterator m_tasks_end;
 
 public:
     template <typename coroutine_t, typename... arg_ts>
     bool add_task(coroutine_t *coro, arg_ts&&... args)
     {
-        for (Task &task: m_tasks) {
-            if (!task.coro) {
-                (*coro)(args...);
-                task.coro = coro;
-                task.condition.type = WakeupCondition::NONE;
-                *m_event_tasks_end++ = &task;
-                return true;
-            }
+        if (m_tasks_end == m_tasks.end()) {
+            __asm__ volatile("bkpt #30"); // scheduler configured for less tasks
+            return false;
         }
-        __asm__ volatile("bkpt #30"); // scheduler configured for less tasks
-        return false;
+        Task &task = *m_tasks_end++;
+        (*coro)(args...);
+        task.coro = coro;
+        task.condition.type = WakeupCondition::NONE;
+        return true;
     }
 
     void run()
@@ -103,79 +88,15 @@ public:
         while (1) {
             sched_clock::time_point now = sched_clock::now();
 
-            while (m_timed_tasks_end != m_timed_tasks.begin()
-                   && m_timed_tasks.front()->condition.wakeup_at <= now)
-            {
-                std::pop_heap(m_timed_tasks.begin(), m_timed_tasks_end);
-                Task &task = **(m_timed_tasks_end-1);
-                task.condition = task.coro->step(now);
-                switch (task.condition.type)
-                {
-                case WakeupCondition::TIMER:
-                {
-                    // re-add the task to the queue, no need to modify
-                    // m_timed_tasks_end
-                    std::push_heap(m_timed_tasks.begin(), m_timed_tasks_end);
-                    break;
-                }
-                case WakeupCondition::NONE:
-                case WakeupCondition::EVENT:
-                {
-                    // move task to event list
-                    *m_event_tasks_end++ = &task;
-                    // intentional fall-through
-                }
-                case WakeupCondition::FINSIHED:
-                {
-                    // remove task
-                    m_timed_tasks_end--;
-                    break;
-                }
-                }
-            }
-
-            for (auto iter = m_event_tasks.begin();
-                 iter != m_event_tasks_end;
+            for (auto iter = m_tasks.begin();
+                 iter != m_tasks_end;
                  ++iter)
             {
-                Task &task = **iter;
+                Task &task = *iter;
                 if (!task.can_run_now(now)) {
                     continue;
                 }
-
                 task.condition = task.coro->step(now);
-                switch (task.condition.type)
-                {
-                case WakeupCondition::TIMER:
-                {
-                    add_timed_task(task);
-                    // intentional fallthrough
-                }
-                case WakeupCondition::FINSIHED:
-                {
-                    if (iter != m_event_tasks_end-1) {
-                        std::swap(*iter, *(m_event_tasks_end-1));
-                    }
-                    iter--;
-                    m_event_tasks_end--;
-                    break;
-                }
-                case WakeupCondition::NONE:
-                {
-                    // we must not sleep, NONE wants to run again
-                    // immediately
-                    sched_no_event_pending.clear();
-                    break;
-                }
-                case WakeupCondition::EVENT:;
-                }
-            }
-
-            if (m_event_tasks_end == m_event_tasks.begin() &&
-                    m_timed_tasks_end == m_timed_tasks.begin())
-            {
-                // no tasks to run anymore!
-                return;
             }
 
             if (sched_no_event_pending.test_and_set()) {
