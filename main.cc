@@ -332,6 +332,58 @@ public:
     }
 };
 
+
+class MiscTask: public Coroutine {
+public:
+    MiscTask(CommInterface &comm):
+        m_comm(comm)
+    {
+
+    }
+
+private:
+    CommInterface &m_comm;
+    sbx_msg_status_t m_tmp;
+
+public:
+    void operator()() {
+
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        while (1) {
+            m_tmp.rtc = -1;  // TODO
+            m_tmp.uptime = sched_clock::now_raw();
+            m_tmp.xbee_status.rx_errors = m_comm.rx_errors();
+            m_tmp.xbee_status.rx_overruns = m_comm.rx_overruns();
+            m_tmp.xbee_status.tx_non_acked = -1;  // TODO
+            m_tmp.xbee_status.tx_retries = -1;  // TODO
+            m_tmp.core_status.undervoltage_detected = 0;  // TODO
+            await(m_comm.output_buffer().any_buffer_free());
+            {
+                CommInterface::buffer_t::buffer_handle_t handle;
+                sbx_msg_t *buf;
+                do {
+                    handle = m_comm.output_buffer().allocate(
+                                *(uint8_t**)&buf,
+                                sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t)
+                                );
+                } while (handle == CommInterface::buffer_t::INVALID_BUFFER);
+                buf->type = sbx_msg_type::STATUS;
+                memcpy(&buf->payload.status,
+                       &m_tmp,
+                       sizeof(sbx_msg_status_t));
+                m_comm.output_buffer().set_ready(handle);
+            }
+            await(sleep_c(10000, now));
+        }
+        COROUTINE_END;
+    }
+};
+
+
 void delay() {
     for (uint32_t i = 0; i < 800000; ++i) {
         __asm__ volatile("nop");
@@ -349,7 +401,8 @@ static IMUSensorStream stream_mx(comm);
 static IMUSensorStream stream_my(comm);
 static IMUSensorStream stream_mz(comm);
 static SampleLightsensor sample_lightsensor(comm);
-static Scheduler<9> scheduler;
+static MiscTask misc(comm);
+static Scheduler<10> scheduler;
 
 
 int main() {
@@ -467,6 +520,7 @@ int main() {
     scheduler.add_task(&stream_mz, 5);
     scheduler.add_task(&comm);
     scheduler.add_task(&sample_lightsensor);
+    scheduler.add_task(&misc);
 
     scheduler.run();
 

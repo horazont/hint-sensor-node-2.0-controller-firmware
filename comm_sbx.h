@@ -16,8 +16,11 @@ static constexpr std::size_t MAX_XBEE_PAYLOAD_SIZE = 84;
 
 enum class sbx_msg_type: std::uint8_t
 {
-    HELLO = 0x00,
-    PONG = 0x01,
+    PING = 0x01,
+
+    HELLO = 0x80,
+    PONG = 0x81,
+    STATUS = 0x82,
     SENSOR_DS18B20 = 0xf1,
     SENSOR_NOISE = 0xf2,
     SENSOR_DHT = 0xf3,
@@ -116,6 +119,26 @@ struct COMM_PACKED sbx_msg_hello_t
     sbx_uptime_t uptime;
 };
 
+struct COMM_PACKED sbx_msg_status_t
+{
+    sbx_rtc_t rtc;
+    sbx_uptime_t uptime;
+    struct COMM_PACKED {
+        uint16_t rx_errors;
+        uint16_t rx_overruns;
+        uint16_t tx_non_acked;
+        uint16_t tx_retries;
+    } xbee_status;
+    struct COMM_PACKED {
+        uint8_t undervoltage_detected;
+    } core_status;
+};
+
+struct COMM_PACKED sbx_msg_ping_t
+{
+
+};
+
 struct COMM_PACKED sbx_msg_pong_t
 {
     sbx_uptime_t uptime;
@@ -125,8 +148,11 @@ struct COMM_PACKED sbx_msg_t
 {
     sbx_msg_type type;
     union COMM_PACKED {
+        sbx_msg_ping_t ping;
+
         sbx_msg_hello_t hello;
         sbx_msg_pong_t pong;
+        sbx_msg_status_t status;
         sbx_msg_sensor_stream_t sensor_stream;
         sbx_msg_ds18b20_t ds18b20;
         sbx_msg_noise_t noise;

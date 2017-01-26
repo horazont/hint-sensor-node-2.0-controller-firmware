@@ -74,6 +74,16 @@ public:
         return m_buffer;
     }
 
+    inline uint16_t rx_overruns() const
+    {
+        return m_rx_overruns;
+    }
+
+    inline uint16_t rx_errors() const
+    {
+        return m_rx_errors;
+    }
+
     COROUTINE_DECL;
 
     friend void _xbee_usart_rx_data_cb(const uint8_t ch, const uint16_t sr);
