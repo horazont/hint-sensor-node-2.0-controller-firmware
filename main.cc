@@ -68,6 +68,74 @@ public:
 };
 
 
+class SampleLightsensor: public Coroutine
+{
+public:
+    explicit SampleLightsensor(CommInterface &comm):
+        m_comm(comm)
+    {
+
+    }
+
+private:
+    CommInterface &m_comm;
+
+    sched_clock::time_point m_last_start;
+    CommInterface::buffer_t::buffer_handle_t m_out_buffer_handle;
+    sbx_msg_t *m_out_buffer;
+    uint16_t m_out_length;
+
+    char buf[8];
+
+    unsigned int m_i;
+    unsigned int m_j;
+
+public:
+    void operator()()
+    {
+        Coroutine::operator()();
+        m_j = 0;
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        while (1) {
+            await(m_comm.output_buffer().any_buffer_free());
+            m_out_buffer_handle = m_comm.output_buffer().allocate(
+                        *((uint8_t**)&m_out_buffer),
+                        CommInterface::buffer_t::BUFFER_SIZE,
+                        PRIO_NO_RETRIES);
+            if (m_out_buffer_handle == CommInterface::buffer_t::INVALID_BUFFER) {
+                continue;
+            }
+
+            m_out_buffer->type = sbx_msg_type::SENSOR_LIGHT;
+
+            for (m_i = 0; m_i < SBX_LIGHT_SENSOR_SAMPLES; ++m_i) {
+                if (m_i > 0) {
+                    await(sleep_c(1000, m_last_start));
+                }
+                m_last_start = now;
+                m_out_buffer->payload.light.samples[m_i].timestamp = sched_clock::now_raw();
+                for (m_j = 0; m_j < SBX_LIGHT_SENSOR_CHANNELS; ++m_j)
+                {
+                    ls_freq_select_channel(m_j);
+                    await(sleep_c(200));
+                    m_out_buffer->payload.light.samples[m_i].ch[m_j] = ls_freq_read();
+
+                }
+            }
+
+            m_comm.output_buffer().set_ready(
+                        m_out_buffer_handle,
+                        sizeof(sbx_msg_type) + sizeof(sbx_msg_light_t));
+        }
+        COROUTINE_END;
+    }
+};
+
+
 class IMUSensorStream: public Coroutine
 {
 public:
@@ -275,6 +343,7 @@ static IMUSensorStream stream_az(comm);
 static IMUSensorStream stream_mx(comm);
 static IMUSensorStream stream_my(comm);
 static IMUSensorStream stream_mz(comm);
+static SampleLightsensor sample_lightsensor(comm);
 static Scheduler<9> scheduler;
 
 
@@ -392,6 +461,7 @@ int main() {
     scheduler.add_task(&stream_my, 4);
     scheduler.add_task(&stream_mz, 5);
     scheduler.add_task(&comm);
+    scheduler.add_task(&sample_lightsensor);
 
     scheduler.run();
 
