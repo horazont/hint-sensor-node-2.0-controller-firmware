@@ -43,6 +43,11 @@ void MemManage_Handler()
 }
 
 
+static const uint8_t lightsensor_ch_map[4] = {
+    0, 3, 2, 1
+};
+
+
 using CommInterface = CommXBEE;
 
 
@@ -122,7 +127,7 @@ public:
                 {
                     ls_freq_select_channel(m_j);
                     await(sleep_c(200));
-                    m_out_buffer->payload.light.samples[m_i].ch[m_j] = ls_freq_read();
+                    m_out_buffer->payload.light.samples[m_i].ch[lightsensor_ch_map[m_j]] = ls_freq_read();
 
                 }
             }

@@ -86,7 +86,16 @@ struct COMM_PACKED sbx_msg_noise_t
 
 struct COMM_PACKED sbx_msg_light_sample_t
 {
+    /**
+     * Timestamp at which the first channel was sampled.
+     *
+     * The channels are sampled in undefined order with an interval of 200ms.
+     */
     sbx_uptime_t timestamp;
+
+    /**
+     * Data for each of the four channels, in order: Red, Green, Blue, Clear.
+     */
     uint16_t ch[4];
 };
 
