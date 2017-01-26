@@ -14,6 +14,7 @@
 #include "comm_sbx.h"
 #include "comm_xbee.h"
 #include "usart.h"
+#include "lightsensor_freq.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
@@ -57,9 +58,9 @@ public:
     {
         COROUTINE_INIT;
         while (1) {
-            await(sleepc(500, now));
+            await(sleep_c(500, now));
             GPIOA->BSRR = GPIO_BSRR_BS5;
-            await(sleepc(500, now));
+            await(sleep_c(500, now));
             GPIOA->BSRR = GPIO_BSRR_BR5;
         }
         COROUTINE_END;
@@ -92,6 +93,9 @@ private:
     sbx_msg_t *m_out_buffer;
     uint16_t m_out_length;
 
+    uint16_t m_sample_counter;
+
+    bool m_average_initialised;
     uint16_t m_average;
 
     std::array<uint8_t, SENSOR_STREAM::MAX_BITMAP_SIZE> m_bitmap_buffer;
@@ -116,10 +120,19 @@ private:
         m_samples_used = 0;
         m_packet_pos = 0;
         m_packet_initialised = false;
+        m_average_initialised = false;
     }
 
     inline bool pack_sample(uint16_t sample)
     {
+        if (!m_average_initialised) {
+            m_average = sample;
+            m_average_initialised = true;
+            m_sample_counter += 1;
+            // we don’t need to code the sample
+            return true;
+        }
+
         const uint16_t value = sample - m_average;
         const int16_t svalue = (int16_t)value;
 
@@ -146,7 +159,7 @@ private:
             // zero bit in bitmap
         }
 
-        m_samples_used += 1;
+        m_sample_counter += 1;
 
         if (m_bitmap_bit == 0) {
             m_bitmap_bit = 7;
@@ -165,6 +178,7 @@ private:
         m_out_buffer->type = static_cast<sbx_msg_type>(
                     static_cast<uint8_t>(sbx_msg_type::SENSOR_STREAM_ACCEL_X) +
                     m_src_offset);
+        m_out_buffer->payload.sensor_stream.average = m_average;
         memcpy(&m_out_buffer->payload.sensor_stream.data[0],
                 &m_bitmap_buffer[0],
                 bitmap_len);
@@ -186,6 +200,7 @@ public:
         Coroutine::operator()();
         m_src_offset = channel;
         m_out_buffer_handle = CommInterface::buffer_t::BUFFER_SIZE;
+        m_sample_counter = 0;
     }
 
     COROUTINE_DECL
@@ -209,9 +224,7 @@ public:
                 await(imu_timed_full_buffer(m_src_buffer));
 
                 if (!m_packet_initialised) {
-                    m_average = m_src_buffer->samples[0].accel_compass[m_src_offset];
-                    m_out_buffer->payload.sensor_stream.seq = m_src_buffer->seq;
-                    m_out_buffer->payload.sensor_stream.average = m_average;
+                    m_out_buffer->payload.sensor_stream.seq = m_sample_counter;
                     if (m_hangover_len) {
                         for (m_i = 0; m_i < m_hangover_len; ++m_i) {
                             // hangover buffer is too small to cause a packet to be emitted
@@ -222,13 +235,13 @@ public:
                     m_packet_initialised = true;
                 }
 
-
                 m_samples_used = 0;
                 for (m_i = 0; m_i < m_src_buffer->samples.size(); ++m_i)
                 {
                     if (!pack_sample(m_src_buffer->samples[m_i].accel_compass[m_src_offset])) {
                         break;
                     }
+                    m_samples_used += 1;
                 }
 
             } while (m_samples_used == m_src_buffer->samples.size() &&
@@ -262,12 +275,13 @@ static IMUSensorStream stream_az(comm);
 static IMUSensorStream stream_mx(comm);
 static IMUSensorStream stream_my(comm);
 static IMUSensorStream stream_mz(comm);
-static Scheduler<8> scheduler;
+static Scheduler<9> scheduler;
 
 
 int main() {
     RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST | RCC_APB1RSTR_TIM4RST | RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_USART2RST | RCC_APB1RSTR_USART3RST;
     RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST;
+    DMA1->IFCR = 0xfffffff;  // clear all the interrupt flags
 
     delay();
 
@@ -303,8 +317,8 @@ int main() {
             | GPIO_CRH_CNF11_0
             | GPIO_CRH_CNF12_0
             | GPIO_CRH_CNF13_0
-            | GPIO_CRH_CNF14_0
-            | GPIO_CRH_CNF15_0;
+            | GPIO_CRH_MODE14_1
+            | GPIO_CRH_MODE15_1;
 
     GPIOD->CRL =
             GPIO_CRL_CNF0_0
@@ -336,11 +350,14 @@ int main() {
     RCC->AHBENR |= 0
             | RCC_AHBENR_DMA1EN;
 
-    usart2.init(115200, false);
+    usart2.init(115200);
     usart2.enable();
 
-    usart3.init(115200, false);
+    usart3.init(115200, true); // enable support for CTS
     usart3.enable();
+
+    ls_freq_init();
+    ls_freq_enable();
 
     i2c_init();
     i2c_enable();

@@ -10,7 +10,7 @@ static std::array<imu_buffer_t, 2> _buffers;
 static volatile uint_fast8_t _current_notifier;
 static uint_fast8_t _offset;
 static bool _accel;
-static uint8_t _seq;
+static uint16_t _seq;
 
 static constexpr uint8_t IMU_DEVICE_ADDRESS = 0x1d;
 static constexpr uint8_t IMU_ACCEL_ADDRESS = 0x28;

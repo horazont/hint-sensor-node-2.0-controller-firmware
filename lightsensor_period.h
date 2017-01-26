@@ -3,6 +3,10 @@
 
 #include <stm32f10x.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define LS_PERIOD_SIGNAL_TIMER TIM3
 #define LS_PERIOD_SIGNAL_RCC_ENR RCC_APB1ENR_TIM3EN
 #define LS_PERIOD_PIN_CR GPIOA->CRL
@@ -28,5 +32,8 @@ static inline uint16_t ls_period_read_half()
     return LS_PERIOD_SIGNAL_TIMER->CCR2;
 }
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif

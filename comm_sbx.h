@@ -9,6 +9,9 @@ static constexpr std::size_t MAX_XBEE_PAYLOAD_SIZE = 66;
 static constexpr std::size_t MAX_XBEE_PAYLOAD_SIZE = 84;
 #endif
 
+#define SBX_LIGHT_SENSOR_SAMPLES (6)
+#define SBX_LIGHT_SENSOR_CHANNELS (4)
+
 #define COMM_PACKED __attribute__((packed))
 
 enum class sbx_msg_type: std::uint8_t
@@ -37,7 +40,7 @@ struct COMM_PACKED sbx_msg_sensor_stream_t
     /**
      * "Sequence number" to be able to identify short packet loss.
      */
-    uint8_t seq;
+    uint16_t seq;
 
     /**
      * Average sample value.
@@ -81,11 +84,21 @@ struct COMM_PACKED sbx_msg_noise_t
     uint16_t raw_value;
 };
 
-struct COMM_PACKED sbx_msg_light_t
+struct COMM_PACKED sbx_msg_light_sample_t
 {
     sbx_uptime_t timestamp;
-    uint16_t intensity;
-    uint16_t rgb[3];
+    uint16_t ch[4];
+};
+
+struct COMM_PACKED sbx_msg_light_t
+{
+    /**
+     * Array containing the samples.
+     *
+     * Six samples are safe even with encryption and provide a reasonable update
+     * interval.
+     */
+    sbx_msg_light_sample_t samples[6];
 };
 
 struct COMM_PACKED sbx_msg_hello_t
@@ -102,7 +115,7 @@ struct COMM_PACKED sbx_msg_pong_t
 struct COMM_PACKED sbx_msg_t
 {
     sbx_msg_type type;
-    union {
+    union COMM_PACKED {
         sbx_msg_hello_t hello;
         sbx_msg_pong_t pong;
         sbx_msg_sensor_stream_t sensor_stream;

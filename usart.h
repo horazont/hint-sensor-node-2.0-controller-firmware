@@ -86,7 +86,7 @@ private:
     }
 
 public:
-    void init(uint32_t baudrate, bool use_modem);
+    void init(uint32_t baudrate, bool use_cts = false, bool use_rts = false);
     void enable();
     void disable();
     ASYNC_CALLABLE tx_ready();

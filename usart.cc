@@ -35,6 +35,7 @@ USART::USART(USART_TypeDef *usart,
                 | DMA_CCR1_TCIE | DMA_CCR1_TEIE
                 // do not enable channel yet
                 ;
+
         m_tx_dma->CPAR = (uint32_t)&usart->DR;
     }
     if (m_rx_dma) {
@@ -92,7 +93,7 @@ IRQn_Type USART::get_dma_irqn(DMA_Channel_TypeDef *dmach)
     }
 }
 
-void USART::init(uint32_t baudrate, bool use_modem)
+void USART::init(uint32_t baudrate, bool use_cts, bool use_rts)
 {
     const uint32_t f_clk = (m_usart == USART1 ? CPU_FREQ : CPU_FREQ / 2);
     // we want to round up. better be below the target baudrate than above
@@ -102,8 +103,11 @@ void USART::init(uint32_t baudrate, bool use_modem)
     m_usart->CR1 = 0;
     m_usart->CR2 = 0;
     uint32_t cr3 = 0;
-    if (use_modem) {
-        cr3 |= USART_CR3_CTSE | USART_CR3_RTSE;
+    if (use_cts) {
+        cr3 |= USART_CR3_CTSE;
+    }
+    if (use_rts) {
+        cr3 |= USART_CR3_RTSE;
     }
     m_usart->CR3 = cr3;
     m_usart->BRR = brr;

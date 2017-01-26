@@ -107,7 +107,7 @@ public:
 };
 
 
-WakeupCondition sleepc(uint16_t ms);
-WakeupCondition sleepc(uint16_t ms, sched_clock::time_point now);
+WakeupCondition sleep_c(uint16_t ms);
+WakeupCondition sleep_c(uint16_t ms, sched_clock::time_point now);
 
 #endif

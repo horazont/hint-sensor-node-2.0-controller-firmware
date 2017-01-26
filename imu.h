@@ -15,7 +15,7 @@ static constexpr std::size_t IMU_BUFFER_LENGTH = 12;
 
 struct imu_buffer_t
 {
-    uint8_t seq;
+    uint16_t seq;
     std::array<imu_data_point_t, IMU_BUFFER_LENGTH> samples;
 };
 

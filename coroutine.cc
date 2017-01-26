@@ -28,7 +28,7 @@ WakeupCondition Coroutine::step(const stm32_clock::time_point now)
 
 
 
-WakeupCondition sleepc(uint16_t ms)
+WakeupCondition sleep_c(uint16_t ms)
 {
     // we can at most sleep for 2^15-1
     if (ms >= 1<<15) {
@@ -41,7 +41,7 @@ WakeupCondition sleepc(uint16_t ms)
     };
 }
 
-WakeupCondition sleepc(uint16_t ms, const sched_clock::time_point now)
+WakeupCondition sleep_c(uint16_t ms, const sched_clock::time_point now)
 {
     // we can at most sleep for 2^15-1
     if (ms >= 1<<15) {

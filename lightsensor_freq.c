@@ -25,6 +25,8 @@ void ls_freq_init()
 
     LS_FREQ_PIN_CR = (LS_FREQ_PIN_CR & ~LS_FREQ_PIN_CONFIG_MASK)
         | LS_FREQ_PIN_CONFIG(CNF, 0);
+
+    ls_freq_select_channel(0);
 }
 
 void ls_freq_enable()
@@ -37,4 +39,11 @@ void ls_freq_disable()
 {
     LS_FREQ_MASTER_TIMER->CR1 &= ~TIM_CR1_CEN;
     LS_FREQ_SLAVE_TIMER->CR1 &= ~TIM_CR1_CEN;
+}
+
+void ls_freq_select_channel(uint8_t ch)
+{
+    // clip
+    ch = ch & 0x3;
+    GPIOB->ODR = (GPIOB->ODR & ~(GPIO_ODR_ODR14 | GPIO_ODR_ODR15)) | (ch << 14);
 }

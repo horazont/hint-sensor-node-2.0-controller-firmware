@@ -3,6 +3,10 @@
 
 #include <stm32f10x.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define LS_FREQ_MASTER_TIMER TIM2
 #define LS_FREQ_SLAVE_TIMER TIM3
 #define LS_FREQ_MASTER_RCC_ENR RCC_APB1ENR_TIM2EN
@@ -21,9 +25,15 @@ void ls_freq_init();
 void ls_freq_enable();
 void ls_freq_disable();
 
+void ls_freq_select_channel(uint8_t ch);
+
 static inline uint16_t ls_freq_read()
 {
     return LS_FREQ_SLAVE_TIMER->CCR1;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

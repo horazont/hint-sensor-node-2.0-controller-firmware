@@ -94,6 +94,7 @@ public:
                 return true;
             }
         }
+        __asm__ volatile("bkpt #30"); // scheduler configured for less tasks
         return false;
     }
 
@@ -122,7 +123,7 @@ public:
                 {
                     // move task to event list
                     *m_event_tasks_end++ = &task;
-                    // intentionall fall-through
+                    // intentional fall-through
                 }
                 case WakeupCondition::FINSIHED:
                 {
