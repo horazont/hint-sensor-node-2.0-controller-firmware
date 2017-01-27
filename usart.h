@@ -87,9 +87,13 @@ private:
 
 public:
     void init(uint32_t baudrate, bool use_cts = false, bool use_rts = false);
+    void set_baudrate(const uint32_t baudrate);
+    uint16_t calc_brr(const uint32_t baudrate);
+    void set_brr(const uint16_t brr);
     void enable();
     void disable();
     ASYNC_CALLABLE tx_ready();
+    void send_a(const uint8_t *buf, const uint16_t len);
     ASYNC_CALLABLE send_c(const uint8_t *buf, const uint16_t len);
     ASYNC_CALLABLE sendv_c(const sendv_array_t &bufs);
     void send(const uint8_t *buf, const uint16_t len);

@@ -95,10 +95,6 @@ IRQn_Type USART::get_dma_irqn(DMA_Channel_TypeDef *dmach)
 
 void USART::init(uint32_t baudrate, bool use_cts, bool use_rts)
 {
-    const uint32_t f_clk = (m_usart == USART1 ? CPU_FREQ : CPU_FREQ / 2);
-    // we want to round up. better be below the target baudrate than above
-    const uint16_t brr = (f_clk+baudrate-1) / baudrate;
-
     // disable everything first
     m_usart->CR1 = 0;
     m_usart->CR2 = 0;
@@ -110,8 +106,25 @@ void USART::init(uint32_t baudrate, bool use_cts, bool use_rts)
         cr3 |= USART_CR3_RTSE;
     }
     m_usart->CR3 = cr3;
-    m_usart->BRR = brr;
+    set_baudrate(baudrate);
 
+}
+
+void USART::set_baudrate(const uint32_t baudrate)
+{
+    m_usart->BRR = calc_brr(baudrate);
+}
+
+uint16_t USART::calc_brr(const uint32_t baudrate)
+{
+    const uint32_t f_clk = (m_usart == USART1 ? CPU_FREQ : CPU_FREQ / 2);
+    // we want to round up. better be below the target baudrate than above
+    return (f_clk+baudrate-1) / baudrate;
+}
+
+void USART::set_brr(const uint16_t brr)
+{
+    m_usart->BRR = brr;
 }
 
 void USART::enable()
@@ -146,12 +159,8 @@ ASYNC_CALLABLE USART::tx_ready()
     return m_tx_idle_notify.ready_c();
 }
 
-ASYNC_CALLABLE USART::send_c(const uint8_t *buf, const uint16_t len)
+void USART::send_a(const uint8_t *buf, const uint16_t len)
 {
-    if (len == 0) {
-        return WakeupCondition::none();
-    }
-
     m_tx_sendv[0] = sendv_item(buf, len);
     m_tx_sendv[1] = sendv_item();
     m_tx_offset = 0;
@@ -159,6 +168,15 @@ ASYNC_CALLABLE USART::send_c(const uint8_t *buf, const uint16_t len)
     m_tx_idle_notify.reset();
 
     start_async_tx();
+}
+
+ASYNC_CALLABLE USART::send_c(const uint8_t *buf, const uint16_t len)
+{
+    if (len == 0) {
+        return WakeupCondition::none();
+    }
+
+    send_a(buf, len);
 
     return m_tx_idle_notify.ready_c();
 }
