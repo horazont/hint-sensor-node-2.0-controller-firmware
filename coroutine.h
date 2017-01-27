@@ -37,6 +37,8 @@ typedef stm32_clock sched_clock;
 #define yield await(WakeupCondition::none())
 
 #define await_call(c, ...)\
+        static_assert(!std::is_same<decltype(c), COROUTINE_RETURN_TYPE>::value, "awaitable passed to await_call; did you mean to use await or expand the argmuents?");\
+        static_assert(std::is_base_of<Coroutine, std::remove_reference<decltype(c)>::type>::value, "first argument to await_call must be coroutine");\
         do {\
             c(__VA_ARGS__);\
             m_state_line=__LINE__ << 1;\
