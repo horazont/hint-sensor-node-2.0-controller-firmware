@@ -199,7 +199,7 @@ public:
 
     ASYNC_CALLABLE any_buffer_free()
     {
-        if (m_buffers_allocated > 0) {
+        if (m_buffers_allocated < BUFFER_COUNT) {
             return WakeupCondition::none();
         }
         return m_any_buffer_free_notifier.ready_c();
