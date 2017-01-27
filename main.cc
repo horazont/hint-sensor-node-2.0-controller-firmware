@@ -128,7 +128,6 @@ public:
                     ls_freq_select_channel(m_j);
                     await(sleep_c(200));
                     m_out_buffer->payload.light.samples[m_i].ch[lightsensor_ch_map[m_j]] = ls_freq_read();
-
                 }
             }
 
@@ -160,7 +159,8 @@ private:
 
 private:
     const imu_buffer_t *m_src_buffer;
-    uint_fast8_t m_src_offset;
+    uint_fast8_t m_src_axis;
+    imu_source_t m_src_type;
 
     CommInterface::buffer_t::buffer_handle_t m_out_buffer_handle;
     sbx_msg_t *m_out_buffer;
@@ -250,7 +250,8 @@ private:
         // const uint8_t total_len = bitmap_len + m_packet_pos + 2;
         m_out_buffer->type = static_cast<sbx_msg_type>(
                     static_cast<uint8_t>(sbx_msg_type::SENSOR_STREAM_ACCEL_X) +
-                    m_src_offset);
+                    m_src_type*3 +
+                    m_src_axis);
         m_out_buffer->payload.sensor_stream.average = m_average;
         memcpy(&m_out_buffer->payload.sensor_stream.data[0],
                 &m_bitmap_buffer[0],
@@ -268,10 +269,11 @@ private:
     }
 
 public:
-    void operator()(uint8_t channel)
+    void operator()(const imu_source_t src, const uint8_t axis)
     {
         Coroutine::operator()();
-        m_src_offset = channel;
+        m_src_type = src;
+        m_src_axis = axis;
         m_out_buffer_handle = CommInterface::buffer_t::BUFFER_SIZE;
         m_sample_counter = 0;
     }
@@ -294,10 +296,10 @@ public:
 
             // pack data into buffer until full
             do {
-                await(imu_timed_full_buffer(m_src_buffer));
+                await(imu_timed_full_buffer(m_src_buffer, m_src_type));
 
                 if (!m_packet_initialised) {
-                    m_out_buffer->payload.sensor_stream.seq = m_sample_counter;
+                    m_out_buffer->payload.sensor_stream.seq = m_src_buffer->first_sample-m_hangover_len;
                     if (m_hangover_len) {
                         for (m_i = 0; m_i < m_hangover_len; ++m_i) {
                             // hangover buffer is too small to cause a packet to be emitted
@@ -311,7 +313,7 @@ public:
                 m_samples_used = 0;
                 for (m_i = 0; m_i < m_src_buffer->samples.size(); ++m_i)
                 {
-                    if (!pack_sample(m_src_buffer->samples[m_i].accel_compass[m_src_offset])) {
+                    if (!pack_sample(m_src_buffer->samples[m_i].vector[m_src_axis])) {
                         break;
                     }
                     m_samples_used += 1;
@@ -322,7 +324,8 @@ public:
 
             m_hangover_len = 0;
             for (m_i = m_samples_used; m_i < m_src_buffer->samples.size(); ++m_i) {
-                m_hangover_buffer[m_i-m_samples_used] = m_src_buffer->samples[m_i].accel_compass[m_src_offset];
+                m_hangover_buffer[m_i-m_samples_used] =
+                        m_src_buffer->samples[m_i].vector[m_src_axis];
                 m_hangover_len += 1;
             }
 
@@ -489,15 +492,31 @@ int main() {
     i2c_workaround_reset();
 
     static const uint8_t config_20[] = {
-        // 0x20
-        0x67,
-        0x00,
+        // at 0x20
+        // data rate = 200 Hz  |  block data update  |  enable all three axis
+        0x70 | 0x08 | 0x07,
+        // anti-alias filter = 194 Hz
+        0x40,
+        //0x00,
     };
+    /*static const uint8_t config_24[] = {
+        // at 0x24
+        // temperature sensor enabled  |  high resolution  |  data rate = 3.125 Hz
+        0x80 | 0x60,
+        // full scale = ±2 gauss
+        0x00,
+        0x00,
+    };*/
+
+    /*static const uint8_t config_20[] = {
+        0x67,
+        0x00
+    };*/
+
     static const uint8_t config_24[] = {
-        // 0x24
         0xf4,
         0x00,
-        0x00,
+        0x00
     };
 
     i2c_smbus_write(0x1d, 0x20, 2, &config_20[0]);
@@ -511,12 +530,12 @@ int main() {
     // stm32_rtc::enable();
 
     scheduler.add_task(&blink);
-    scheduler.add_task(&stream_ax, 0);
-    scheduler.add_task(&stream_ay, 1);
-    scheduler.add_task(&stream_az, 2);
-    scheduler.add_task(&stream_mx, 3);
-    scheduler.add_task(&stream_my, 4);
-    scheduler.add_task(&stream_mz, 5);
+    scheduler.add_task(&stream_ax, IMU_SOURCE_ACCELEROMETER, 0);
+    scheduler.add_task(&stream_ay, IMU_SOURCE_ACCELEROMETER, 1);
+    scheduler.add_task(&stream_az, IMU_SOURCE_ACCELEROMETER, 2);
+    scheduler.add_task(&stream_mx, IMU_SOURCE_MAGNETOMETER, 0);
+    scheduler.add_task(&stream_my, IMU_SOURCE_MAGNETOMETER, 1);
+    scheduler.add_task(&stream_mz, IMU_SOURCE_MAGNETOMETER, 2);
     scheduler.add_task(&comm);
     scheduler.add_task(&sample_lightsensor);
     scheduler.add_task(&misc);
