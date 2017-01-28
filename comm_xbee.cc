@@ -87,7 +87,10 @@ ASYNC_CALLABLE CommXBEETX::step(const sched_clock::time_point now)
 
             info.sendv[1] = USART::sendv_item(info.buffer, info.len);
         }
-
+        /*
+        await(usart2.send_c(&m_tx[m_tx_curr_buf].frame_header[4], 1));
+        await(usart2.send_c(&m_tx[m_tx_curr_buf].checksum, 1));
+        */
         if (m_tx[m_tx_prev_buf].handle != buffer_t::INVALID_BUFFER) {
             // we have to wait for the previous transmission to complete first
             await(m_tx_done);
@@ -97,7 +100,7 @@ ASYNC_CALLABLE CommXBEETX::step(const sched_clock::time_point now)
         }
 
         // wait for the transmitter to become ready
-        await(m_usart.tx_ready());
+        // await(m_usart.tx_ready());
         // send asynchronously and prep next packet if possible
         m_tx_done = m_usart.sendv_c(m_tx[m_tx_curr_buf].sendv);
         m_tx_prev_buf = m_tx_curr_buf;

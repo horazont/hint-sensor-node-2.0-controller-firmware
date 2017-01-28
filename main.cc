@@ -15,6 +15,8 @@
 #include "comm_xbee.h"
 #include "usart.h"
 #include "lightsensor_freq.h"
+#include "onewire.h"
+#include "dht11.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
@@ -91,8 +93,6 @@ private:
     sbx_msg_t *m_out_buffer;
     uint16_t m_out_length;
 
-    char buf[8];
-
     unsigned int m_i;
     unsigned int m_j;
 
@@ -110,8 +110,7 @@ public:
             await(m_comm.buffer().any_buffer_free());
             m_out_buffer_handle = m_comm.buffer().allocate(
                         *((uint8_t**)&m_out_buffer),
-                        CommInterfaceTX::buffer_t::BUFFER_SIZE,
-                        PRIO_NO_RETRIES);
+                        CommInterfaceTX::buffer_t::BUFFER_SIZE);
             if (m_out_buffer_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER) {
                 continue;
             }
@@ -135,6 +134,83 @@ public:
             m_comm.buffer().set_ready(
                         m_out_buffer_handle,
                         sizeof(sbx_msg_type) + sizeof(sbx_msg_light_t));
+        }
+        COROUTINE_END;
+    }
+};
+
+
+class SampleDHT11: public Coroutine
+{
+public:
+    explicit SampleDHT11(CommInterfaceTX &comm):
+        m_comm(comm)
+    {
+
+    }
+
+private:
+    CommInterfaceTX &m_comm;
+
+    sched_clock::time_point m_last_start;
+    CommInterfaceTX::buffer_t::buffer_handle_t m_out_buffer_handle;
+    sbx_msg_t *m_out_buffer;
+    uint16_t m_out_length;
+
+    uint16_t m_timestamp;
+    uint16_t m_humidity;
+    uint16_t m_temperature;
+    bool m_valid;
+
+public:
+    void operator()()
+    {
+        Coroutine::operator()();
+        m_out_buffer_handle = CommInterfaceTX::buffer_t::INVALID_BUFFER;
+    }
+
+    COROUTINE_DECL
+    {
+//        static const char msg_chksum_err[] = "checksum error!";
+//        static const char msg_ok[] = "got data";
+//        static const char msg_sampling[] = "sampling...";
+
+        COROUTINE_INIT;
+        while (1) {
+//            await(usart2.send_c((const uint8_t*)&msg_sampling[0], sizeof(msg_sampling)));
+
+            dht11_sample_prep(m_humidity, m_temperature, m_valid);
+            await(dht11_trigger_c());
+            await(dht11_sample_fire_c());
+
+            if (!m_valid) {
+//                await(usart2.send_c((const uint8_t*)&msg_chksum_err[0], sizeof(msg_chksum_err)));
+                await(sleep_c(200));
+                continue;
+            }
+
+//            await(usart2.send_c((const uint8_t*)&msg_ok[0], sizeof(msg_ok)));
+
+            m_timestamp = sched_clock::now_raw();
+
+            while (m_out_buffer_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER) {
+                await(m_comm.buffer().any_buffer_free());
+                m_out_buffer_handle = m_comm.buffer().allocate(
+                            *((uint8_t**)&m_out_buffer),
+                            CommInterfaceTX::buffer_t::BUFFER_SIZE);
+            }
+
+            m_out_buffer->type = sbx_msg_type::SENSOR_DHT;
+            m_out_buffer->payload.dht11.timestamp = m_timestamp;
+            m_out_buffer->payload.dht11.humidity = m_humidity;
+            m_out_buffer->payload.dht11.temperature = m_temperature;
+
+            m_comm.buffer().set_ready(
+                        m_out_buffer_handle,
+                        sizeof(sbx_msg_type) + sizeof(sbx_msg_dht11_t));
+            m_out_buffer_handle = CommInterfaceTX::buffer_t::INVALID_BUFFER;
+
+            await(sleep_c(5000));
         }
         COROUTINE_END;
     }
@@ -419,12 +495,42 @@ static IMUSensorStream stream_my(commtx);
 static IMUSensorStream stream_mz(commtx);
 static SampleLightsensor sample_lightsensor(commtx);
 static MiscTask misc(commtx, commrx);
-static Scheduler<11> scheduler;
+static Scheduler<12> scheduler;
+
+
+/*static void dump()
+{
+    const uint16_t cnt = TIM1->CNT;
+    const uint16_t ccr1 = TIM1->CCR1;
+    const uint16_t ccr2 = TIM1->CCR2;
+    const uint16_t idr_A = GPIOA->IDR;
+    const uint16_t idr_B = GPIOB->IDR;
+    const uint16_t odr_B = GPIOB->ODR;
+
+    char buf[5];
+    buf[4] = ' ';
+    uint16_to_hex(cnt, buf);
+    usart2.send((const uint8_t*)buf, 5);
+
+    uint16_to_hex(ccr1, buf);
+    usart2.send((const uint8_t*)buf, 5);
+
+    uint16_to_hex(ccr2, buf);
+    usart2.send((const uint8_t*)buf, 5);
+
+    uint16_to_hex((idr_A & (1<<8)) | ((idr_B & (1<<5)) >> 1) | ((odr_B & (1<<5)) >> 5), buf);
+
+    buf[4] = '\n';
+    usart2.send((const uint8_t*)buf, 5);
+}*/
 
 
 int main() {
+    // ensure that ADC doesn’t go up in flames
+    RCC->CFGR |= RCC_CFGR_ADCPRE_DIV8;
+
     RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST | RCC_APB1RSTR_TIM4RST | RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_USART2RST | RCC_APB1RSTR_USART3RST;
-    RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST | RCC_APB2RSTR_TIM1RST;
+    RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST | RCC_APB2RSTR_TIM1RST | RCC_APB2RSTR_USART1RST | RCC_APB2RSTR_ADC1RST;
     DMA1->IFCR = 0xfffffff;  // clear all the interrupt flags
 
     // give it a moment to reset
@@ -442,7 +548,9 @@ int main() {
             | RCC_APB2ENR_IOPDEN
             | RCC_APB2ENR_IOPEEN
             | RCC_APB2ENR_AFIOEN
-            | RCC_APB2ENR_USART1EN;
+            | RCC_APB2ENR_USART1EN
+            | RCC_APB2ENR_ADC1EN
+            | RCC_APB2ENR_TIM1EN;
     RCC->APB1ENR = 0
             | RCC_APB1ENR_PWREN
             | RCC_APB1ENR_BKPEN
@@ -463,11 +571,25 @@ int main() {
             | GPIO_CRL_CNF1_0
             | GPIO_CRL_MODE2_1 | GPIO_CRL_CNF2_1
             | GPIO_CRL_CNF3_0
-            | GPIO_CRL_CNF4_0
+            // noise level analogue in
+            | 0
             | GPIO_CRL_MODE5_1
             | GPIO_CRL_CNF6_0
             | GPIO_CRL_CNF7_0;
     GPIOA->BSRR = GPIO_BSRR_BR5;
+
+    GPIOA->CRH = 0
+            // TIM1_CH1, DHT recv
+            | GPIO_CRH_CNF8_0
+            // USART1 TX
+            | GPIO_CRH_MODE9_1 | GPIO_CRH_CNF9_1
+            // USART1 RX
+            | GPIO_CRH_CNF10_0
+            | GPIO_CRH_CNF11_0
+            | GPIO_CRH_CNF12_0
+            | GPIO_CRH_CNF13_0
+            | GPIO_CRH_CNF14_0
+            | GPIO_CRH_CNF15_0;
 
     GPIOB->CRL =
             GPIO_CRL_CNF0_0
@@ -475,7 +597,8 @@ int main() {
             | GPIO_CRL_CNF2_0
             | GPIO_CRL_CNF3_0
             | GPIO_CRL_CNF4_0
-            | GPIO_CRL_CNF5_0
+            // DHT send
+            | GPIO_CRL_MODE5_1 | GPIO_CRL_MODE5_0 | GPIO_CRL_CNF5_0
             | GPIO_CRL_MODE6_0 | GPIO_CRL_CNF6_1 | GPIO_CRL_CNF6_0
             | GPIO_CRL_MODE7_0 | GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0
             ;
@@ -502,11 +625,13 @@ int main() {
 
     I2C1->CR1 = 0;
 
+    usart1.init(115200);
     usart2.init(115200);
     usart3.init(115200, true); // enable support for CTS
     ls_freq_init();
     imu_timed_init();
     stm32_clock::init();
+    dht11_init();
     // stm32_rtc::init();
     i2c_init();
 
@@ -544,6 +669,51 @@ int main() {
     i2c_smbus_write(0x1d, 0x20, 2, &config_20[0]);
     i2c_smbus_write(0x1d, 0x24, 3, &config_24[0]);
 
+    /*ADC1->CR1 = 0;
+    ADC1->CR2 = ADC_CR2_TSVREFE;
+    ADC1->SMPR1 = 0;
+    ADC1->SMPR2 = 0;
+    ADC1->SQR1 = 0
+            ;
+    ADC1->SQR2 = 0;
+    ADC1->SQR3 = 0
+            | ADC_SQR3_SQ1_2
+            | ADC_SQR3_SQ2_4
+            ;
+
+    ADC1->CR2 = ADC_CR2_ADON;
+
+    // give it a moment to settle
+    for (uint32_t i = 0; i < 10000; ++i) {
+        __asm__ volatile("nop");
+    }
+
+    ADC1->CR2 |= ADC_CR2_CAL;
+
+    // wait for calibration to finish
+    while (ADC1->CR2 & ADC_CR2_CAL);
+
+    ADC1->CR1 |= ADC_CR1_SCAN;
+
+    while (1) {
+        ADC1->CR2 |= ADC_CR2_ADON;
+        while (!(ADC1->SR & ADC_SR_EOC));
+
+        char buf[5];
+        buf[4] = '\n';
+        uint16_to_hex(ADC1->DR, buf);
+        usart2.send((const uint8_t*)buf, 5);
+
+        uint16_to_hex(ADC1->DR, buf);
+        usart2.send((const uint8_t*)buf, 5);
+
+        for (uint32_t i = 0; i < 1000000; ++i) {
+            __asm__ volatile("nop");
+        }
+    }*/
+
+
+    usart1.enable();
     usart2.enable();
     usart3.enable();
     ls_freq_enable();
@@ -551,6 +721,8 @@ int main() {
     stm32_clock::enable();
     // stm32_rtc::enable();
 
+    scheduler.add_task(&commtx);
+    scheduler.add_task(&commrx);
     scheduler.add_task(&blink);
     scheduler.add_task(&stream_ax, IMU_SOURCE_ACCELEROMETER, 0);
     scheduler.add_task(&stream_ay, IMU_SOURCE_ACCELEROMETER, 1);
@@ -558,8 +730,6 @@ int main() {
     scheduler.add_task(&stream_mx, IMU_SOURCE_MAGNETOMETER, 0);
     scheduler.add_task(&stream_my, IMU_SOURCE_MAGNETOMETER, 1);
     scheduler.add_task(&stream_mz, IMU_SOURCE_MAGNETOMETER, 2);
-    scheduler.add_task(&commtx);
-    scheduler.add_task(&commrx);
     scheduler.add_task(&sample_lightsensor);
     scheduler.add_task(&misc);
 

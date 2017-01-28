@@ -98,6 +98,8 @@ void USART::init(uint32_t baudrate, bool use_cts, bool use_rts)
     // disable everything first
     m_usart->CR1 = 0;
     m_usart->CR2 = 0;
+    // clear them bits
+    m_usart->SR = 0;
     uint32_t cr3 = 0;
     if (use_cts) {
         cr3 |= USART_CR3_CTSE;
@@ -201,10 +203,9 @@ void USART::send(const uint8_t *buf, const uint16_t len)
     m_tx_idle_notify.reset();
     cr1 |= USART_CR1_TE;
     for (uint16_t i = 0; i < len; ++i) {
-        while (!(sr & USART_SR_TC));
         dr = *buf++;
+        while (!(sr & USART_SR_TC));
     }
-    while (!(sr & USART_SR_TC));
     cr1 &= ~USART_CR1_TE;
     m_tx_idle_notify.trigger();
 }

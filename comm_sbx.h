@@ -139,6 +139,13 @@ struct COMM_PACKED sbx_msg_status_t
     } core_status;
 };
 
+struct COMM_PACKED sbx_msg_dht11_t
+{
+    sbx_uptime_t timestamp;
+    uint16_t humidity;
+    uint16_t temperature;
+};
+
 struct COMM_PACKED sbx_msg_ping_t
 {
 
@@ -160,6 +167,7 @@ struct COMM_PACKED sbx_msg_t
         sbx_msg_status_t status;
         sbx_msg_sensor_stream_t sensor_stream;
         sbx_msg_ds18b20_t ds18b20;
+        sbx_msg_dht11_t dht11;
         sbx_msg_noise_t noise;
         sbx_msg_light_t light;
     } payload;
