@@ -126,8 +126,10 @@ struct COMM_PACKED sbx_msg_status_t
     struct COMM_PACKED {
         uint16_t rx_errors;
         uint16_t rx_overruns;
+        uint16_t rx_buffer_most_allocated;
         uint16_t tx_non_acked;
         uint16_t tx_retries;
+        uint16_t tx_buffer_most_allocated;
     } xbee_status;
     struct COMM_PACKED {
         uint8_t undervoltage_detected;

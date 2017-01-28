@@ -346,7 +346,6 @@ public:
 
 private:
     CommInterface &m_comm;
-    sbx_msg_status_t m_tmp;
     sched_clock::time_point m_last_wakeup;
     CommInterface::buffer_t::buffer_handle_t m_handle;
     sbx_msg_t *m_buf;
@@ -361,13 +360,6 @@ public:
         COROUTINE_INIT;
         while (1) {
             m_last_wakeup = now;
-            m_tmp.rtc = stm32_rtc::now_raw();
-            m_tmp.uptime = sched_clock::now_raw();
-            m_tmp.xbee_status.rx_errors = m_comm.rx_errors();
-            m_tmp.xbee_status.rx_overruns = m_comm.rx_overruns();
-            m_tmp.xbee_status.tx_non_acked = -1;  // TODO
-            m_tmp.xbee_status.tx_retries = -1;  // TODO
-            m_tmp.core_status.undervoltage_detected = 0;  // TODO
             do {
                 await(m_comm.output_buffer().any_buffer_free());
                 m_handle = m_comm.output_buffer().allocate(
@@ -376,10 +368,27 @@ public:
                             );
             } while (m_handle == CommInterface::buffer_t::INVALID_BUFFER);
             m_buf->type = sbx_msg_type::STATUS;
-            memcpy(&m_buf->payload.status,
-                   &m_tmp,
-                   sizeof(sbx_msg_status_t));
+            m_buf->payload.status.rtc = stm32_rtc::now_raw();
+            m_buf->payload.status.uptime = sched_clock::now_raw();
+            m_buf->payload.status.xbee_status.rx_errors = m_comm.rx_errors();
+            m_buf->payload.status.xbee_status.rx_overruns = m_comm.rx_overruns();
+            m_buf->payload.status.xbee_status.rx_buffer_most_allocated = -1;  // TODO
+            m_buf->payload.status.xbee_status.tx_non_acked = -1;  // TODO
+            m_buf->payload.status.xbee_status.tx_retries = -1;  // TODO
+            {
+                uint16_t most_allocated;
+                m_comm.output_buffer().fetch_stats_and_reset(
+                            most_allocated
+                            );
+                m_buf->payload.status.xbee_status.tx_buffer_most_allocated = most_allocated;
+            }
+            m_buf->payload.status.core_status.undervoltage_detected = 0;  // TODO
             m_comm.output_buffer().set_ready(m_handle);
+            memset(&m_addr, 0, sizeof(onewire_addr_t));
+            do {
+                await_call(m_find_next, m_addr);
+                await(usart2.send_c(&m_addr[0], sizeof(onewire_addr_t)));
+            } while (m_find_next.status() == ONEWIRE_PRESENCE);
             await(sleep_c(10000, m_last_wakeup));
         }
         COROUTINE_END;

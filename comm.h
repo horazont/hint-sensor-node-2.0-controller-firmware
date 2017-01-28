@@ -45,6 +45,7 @@ public:
     CommBuffer():
         m_buffers_allocated(0),
         m_buffers_ready(0),
+        m_most_allocated(0),
         m_dequeue_ptr(0),
         m_allocate_ptr(0)
     {
@@ -54,6 +55,7 @@ public:
 private:
     uint16_t m_buffers_allocated;
     uint16_t m_buffers_ready;
+    uint16_t m_most_allocated;
     buffer_handle_t m_dequeue_ptr;
     buffer_handle_t m_allocate_ptr;
     std::array<buffer_t, BUFFER_COUNT> m_buffers;
@@ -76,6 +78,24 @@ private:
         }
     }
 
+    inline void allocate_buffer(buffer_handle_t i,
+                                uint8_t *&buf,
+                                const uint16_t length,
+                                const uint8_t flags)
+    {
+        buffer_t &buffer = m_buffers[i];
+        buffer.m_length = length;
+        buffer.m_ready = false;
+        buffer.m_flags = flags;
+        buf = &buffer.m_data[0];
+        m_buffers_allocated += 1;
+        if (m_buffers_allocated == BUFFER_COUNT) {
+            m_any_buffer_free_notifier.reset();
+        }
+        m_most_allocated = std::max(m_most_allocated, m_buffers_allocated);
+        m_allocate_ptr = i+1;
+    }
+
 public:
     buffer_handle_t allocate(uint8_t *&buf, const uint16_t length = bytes_per_packet,
                              const uint8_t flags = 0)
@@ -90,15 +110,7 @@ public:
             if (buffer.m_length > 0) {
                 continue;
             }
-            buffer.m_length = length;
-            buffer.m_ready = false;
-            buffer.m_flags = flags;
-            buf = &buffer.m_data[0];
-            m_buffers_allocated += 1;
-            if (m_buffers_allocated == BUFFER_COUNT) {
-                m_any_buffer_free_notifier.reset();
-            }
-            m_allocate_ptr = i+1;
+            allocate_buffer(i, buf, length, flags);
             return i;
         }
         for (i = 0; i < end; ++i) {
@@ -106,15 +118,7 @@ public:
             if (buffer.m_length > 0) {
                 continue;
             }
-            buffer.m_length = length;
-            buffer.m_ready = false;
-            buffer.m_flags = flags;
-            buf = &buffer.m_data[0];
-            m_buffers_allocated += 1;
-            if (m_buffers_allocated == BUFFER_COUNT) {
-                m_any_buffer_free_notifier.reset();
-            }
-            m_allocate_ptr = i+1;
+            allocate_buffer(i, buf, length, flags);
             return i;
         }
         __asm__ volatile("bkpt #20");  // no buffer available, but counter is off
@@ -203,6 +207,12 @@ public:
             return WakeupCondition::none();
         }
         return m_any_buffer_free_notifier.ready_c();
+    }
+
+    inline void fetch_stats_and_reset(uint16_t &most_allocated)
+    {
+        most_allocated = m_most_allocated;
+        m_most_allocated = m_buffers_allocated;
     }
 
 };
