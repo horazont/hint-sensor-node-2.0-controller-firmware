@@ -48,7 +48,8 @@ static const uint8_t lightsensor_ch_map[4] = {
 };
 
 
-using CommInterface = CommXBEE;
+using CommInterfaceTX = CommXBEETX;
+using CommInterfaceRX = CommXBEERX;
 
 
 class BlinkLED: public Coroutine
@@ -76,17 +77,17 @@ public:
 class SampleLightsensor: public Coroutine
 {
 public:
-    explicit SampleLightsensor(CommInterface &comm):
+    explicit SampleLightsensor(CommInterfaceTX &comm):
         m_comm(comm)
     {
 
     }
 
 private:
-    CommInterface &m_comm;
+    CommInterfaceTX &m_comm;
 
     sched_clock::time_point m_last_start;
-    CommInterface::buffer_t::buffer_handle_t m_out_buffer_handle;
+    CommInterfaceTX::buffer_t::buffer_handle_t m_out_buffer_handle;
     sbx_msg_t *m_out_buffer;
     uint16_t m_out_length;
 
@@ -106,12 +107,12 @@ public:
     {
         COROUTINE_INIT;
         while (1) {
-            await(m_comm.output_buffer().any_buffer_free());
-            m_out_buffer_handle = m_comm.output_buffer().allocate(
+            await(m_comm.buffer().any_buffer_free());
+            m_out_buffer_handle = m_comm.buffer().allocate(
                         *((uint8_t**)&m_out_buffer),
-                        CommInterface::buffer_t::BUFFER_SIZE,
+                        CommInterfaceTX::buffer_t::BUFFER_SIZE,
                         PRIO_NO_RETRIES);
-            if (m_out_buffer_handle == CommInterface::buffer_t::INVALID_BUFFER) {
+            if (m_out_buffer_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER) {
                 continue;
             }
 
@@ -131,7 +132,7 @@ public:
                 }
             }
 
-            m_comm.output_buffer().set_ready(
+            m_comm.buffer().set_ready(
                         m_out_buffer_handle,
                         sizeof(sbx_msg_type) + sizeof(sbx_msg_light_t));
         }
@@ -143,16 +144,16 @@ public:
 class IMUSensorStream: public Coroutine
 {
 public:
-    IMUSensorStream(CommInterface &comm):
+    IMUSensorStream(CommInterfaceTX &comm):
         Coroutine(),
         m_comm(comm),
         m_hangover_len(0),
-        m_out_buffer_handle(CommInterface::buffer_t::INVALID_BUFFER)
+        m_out_buffer_handle(CommInterfaceTX::buffer_t::INVALID_BUFFER)
     {
     }
 
 private:
-    CommInterface &m_comm;
+    CommInterfaceTX &m_comm;
     std::array<uint16_t, IMU_BUFFER_LENGTH> m_hangover_buffer;
     uint_fast8_t m_hangover_len;
 
@@ -162,7 +163,7 @@ private:
     uint_fast8_t m_src_axis;
     imu_source_t m_src_type;
 
-    CommInterface::buffer_t::buffer_handle_t m_out_buffer_handle;
+    CommInterfaceTX::buffer_t::buffer_handle_t m_out_buffer_handle;
     sbx_msg_t *m_out_buffer;
     uint16_t m_out_length;
 
@@ -260,7 +261,7 @@ private:
                &m_packet_buffer[0],
                 m_packet_pos);
 
-        m_comm.output_buffer().set_ready(
+        m_comm.buffer().set_ready(
                     m_out_buffer_handle,
                     bitmap_len + m_packet_pos +
                     sizeof(sbx_msg_type) +
@@ -274,7 +275,7 @@ public:
         Coroutine::operator()();
         m_src_type = src;
         m_src_axis = axis;
-        m_out_buffer_handle = CommInterface::buffer_t::BUFFER_SIZE;
+        m_out_buffer_handle = CommInterfaceTX::buffer_t::BUFFER_SIZE;
         m_sample_counter = 0;
     }
 
@@ -283,12 +284,12 @@ public:
         COROUTINE_INIT;
         while (1) {
             // wait for buffer to write into
-            await(m_comm.output_buffer().any_buffer_free());
-            m_out_buffer_handle = m_comm.output_buffer().allocate(
+            await(m_comm.buffer().any_buffer_free());
+            m_out_buffer_handle = m_comm.buffer().allocate(
                         *((uint8_t**)&m_out_buffer),
-                        CommInterface::buffer_t::BUFFER_SIZE,
+                        CommInterfaceTX::buffer_t::BUFFER_SIZE,
                         PRIO_NO_RETRIES);
-            if (m_out_buffer_handle == CommInterface::buffer_t::INVALID_BUFFER) {
+            if (m_out_buffer_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER) {
                 continue;
             }
 
@@ -338,21 +339,22 @@ public:
 
 class MiscTask: public Coroutine {
 public:
-    MiscTask(CommInterface &comm):
-        m_comm(comm)
+    MiscTask(CommInterfaceTX &tx, CommInterfaceRX &rx):
+        m_tx(tx),
+        m_rx(rx)
     {
 
     }
 
 private:
-    CommInterface &m_comm;
+    CommInterfaceTX &m_tx;
+    CommInterfaceRX &m_rx;
     sched_clock::time_point m_last_wakeup;
-    CommInterface::buffer_t::buffer_handle_t m_handle;
+    CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
     sbx_msg_t *m_buf;
 
 public:
     void operator()() {
-
     }
 
     COROUTINE_DECL
@@ -361,34 +363,43 @@ public:
         while (1) {
             m_last_wakeup = now;
             do {
-                await(m_comm.output_buffer().any_buffer_free());
-                m_handle = m_comm.output_buffer().allocate(
+                await(m_tx.buffer().any_buffer_free());
+                m_handle = m_tx.buffer().allocate(
                             *(uint8_t**)&m_buf,
                             sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t)
                             );
-            } while (m_handle == CommInterface::buffer_t::INVALID_BUFFER);
+            } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
             m_buf->type = sbx_msg_type::STATUS;
             m_buf->payload.status.rtc = stm32_rtc::now_raw();
             m_buf->payload.status.uptime = sched_clock::now_raw();
-            m_buf->payload.status.xbee_status.rx_errors = m_comm.rx_errors();
-            m_buf->payload.status.xbee_status.rx_overruns = m_comm.rx_overruns();
-            m_buf->payload.status.xbee_status.rx_buffer_most_allocated = -1;  // TODO
-            m_buf->payload.status.xbee_status.tx_non_acked = -1;  // TODO
-            m_buf->payload.status.xbee_status.tx_retries = -1;  // TODO
+            m_buf->payload.status.xbee_status.rx_errors = m_rx.errors();
+            m_buf->payload.status.xbee_status.rx_overruns = m_rx.overruns();
+            m_buf->payload.status.xbee_status.rx_checksum_errors = m_rx.checksum_errors();
+            m_buf->payload.status.xbee_status.rx_unknown_frames = m_rx.unknown_frames();
+            m_buf->payload.status.xbee_status.rx_skipped_bytes = m_rx.skipped_bytes();
             {
                 uint16_t most_allocated;
-                m_comm.output_buffer().fetch_stats_and_reset(
+                m_rx.buffer().fetch_stats_and_reset(
+                            most_allocated
+                            );
+                m_buf->payload.status.xbee_status.rx_buffer_most_allocated = most_allocated;
+            }
+            m_buf->payload.status.xbee_status.tx_lost = m_rx.tx_lost();
+            m_buf->payload.status.xbee_status.tx_retries = m_rx.tx_retries();
+            {
+                uint16_t most_allocated;
+                m_tx.buffer().fetch_stats_and_reset(
                             most_allocated
                             );
                 m_buf->payload.status.xbee_status.tx_buffer_most_allocated = most_allocated;
             }
             m_buf->payload.status.core_status.undervoltage_detected = 0;  // TODO
-            m_comm.output_buffer().set_ready(m_handle);
-            memset(&m_addr, 0, sizeof(onewire_addr_t));
+            m_tx.buffer().set_ready(m_handle);
+            /*memset(&m_addr, 0, sizeof(onewire_addr_t));
             do {
                 await_call(m_find_next, m_addr);
                 await(usart2.send_c(&m_addr[0], sizeof(onewire_addr_t)));
-            } while (m_find_next.status() == ONEWIRE_PRESENCE);
+            } while (m_find_next.status() == ONEWIRE_PRESENCE);*/
             await(sleep_c(10000, m_last_wakeup));
         }
         COROUTINE_END;
@@ -397,17 +408,18 @@ public:
 
 
 static BlinkLED blink;
-//static I2CSensor sensor;
-static CommInterface comm(usart3);
-static IMUSensorStream stream_ax(comm);
-static IMUSensorStream stream_ay(comm);
-static IMUSensorStream stream_az(comm);
-static IMUSensorStream stream_mx(comm);
-static IMUSensorStream stream_my(comm);
-static IMUSensorStream stream_mz(comm);
-static SampleLightsensor sample_lightsensor(comm);
-static MiscTask misc(comm);
-static Scheduler<10> scheduler;
+static OnewireCore onewire(usart1);
+static CommInterfaceTX commtx(usart3);
+static CommInterfaceRX commrx(usart3);
+static IMUSensorStream stream_ax(commtx);
+static IMUSensorStream stream_ay(commtx);
+static IMUSensorStream stream_az(commtx);
+static IMUSensorStream stream_mx(commtx);
+static IMUSensorStream stream_my(commtx);
+static IMUSensorStream stream_mz(commtx);
+static SampleLightsensor sample_lightsensor(commtx);
+static MiscTask misc(commtx, commrx);
+static Scheduler<11> scheduler;
 
 
 int main() {
@@ -545,7 +557,8 @@ int main() {
     scheduler.add_task(&stream_mx, IMU_SOURCE_MAGNETOMETER, 0);
     scheduler.add_task(&stream_my, IMU_SOURCE_MAGNETOMETER, 1);
     scheduler.add_task(&stream_mz, IMU_SOURCE_MAGNETOMETER, 2);
-    scheduler.add_task(&comm);
+    scheduler.add_task(&commtx);
+    scheduler.add_task(&commrx);
     scheduler.add_task(&sample_lightsensor);
     scheduler.add_task(&misc);
 

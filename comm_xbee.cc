@@ -4,108 +4,24 @@
 #include <cstdio>
 
 
-static CommXBEE *_xbee;
+CommXBEERX *CommXBEERX::m_xbee = nullptr;
 
 
-void _xbee_usart_rx_done_cb(bool success)
+uint8_t calculate_checksum(const uint8_t *buf, const uint16_t len)
 {
-    if (success) {
-        _xbee->m_rx_state = CommXBEE::RX_FRAME_CHECKSUM;
-    } else {
-        _xbee->m_rx_errors += 1;
-        _xbee->m_rx_state = CommXBEE::RX_IDLE;
+    uint8_t tmp = 0;
+    for (unsigned int i = 0; i < len; ++i) {
+        tmp += buf[i];
     }
+    return 0xff - tmp;
 }
 
 
-void _xbee_usart_rx_data_cb(const uint8_t ch, const uint16_t sr)
-{
-    if (sr & USART_SR_FE || sr & USART_SR_NE) {
-        _xbee->m_rx_errors += 1;
-        _xbee->m_rx_state = CommXBEE::RX_IDLE;
-        return;
-    }
-    switch (_xbee->m_rx_state) {
-    case CommXBEE::RX_IDLE:
-    {
-        if (ch != 0x7e) {
-            return;
-        }
-        _xbee->m_rx_state = CommXBEE::RX_FRAME_LENGTH_MSB;
-        break;
-    }
-    case CommXBEE::RX_FRAME_LENGTH_MSB:
-    {
-        _xbee->m_rx_length = ch << 8;
-        _xbee->m_rx_state = CommXBEE::RX_FRAME_LENGTH_LSB;
-        break;
-    }
-    case CommXBEE::RX_FRAME_LENGTH_LSB:
-    {
-        _xbee->m_rx_length |= ch;
-        if (_xbee->m_rx_length > 128) {
-            // this is most likely a lost byte, and we somehow locked onto
-            // a part of another packet, which can happen in rare cases.
-            // we should abort reception immediately and wait for the next
-            // packet to lock at.
-            _xbee->m_rx_overruns += 1;
-            _xbee->m_rx_state = CommXBEE::RX_IDLE;
-            break;
-        }
-        _xbee->m_rx_state = CommXBEE::RX_FRAME_TYPE;
-        break;
-    }
-    case CommXBEE::RX_FRAME_TYPE:
-    {
-        _xbee->m_rx_frame_type = ch;
-        _xbee->m_rx_state = CommXBEE::RX_DATA;
-        _xbee->m_usart.recv_a(&_xbee->m_rx_buffer[0], _xbee->m_rx_length-1,
-                              _xbee_usart_rx_done_cb);
-        _xbee->m_rx_spurious_rxneie = false;
-        break;
-    }
-    case CommXBEE::RX_DATA:
-    {
-        /**
-         * I’m a bit lost here. I’m not sure what to do and how this interrupt
-         * can be triggered at all if DMA is going on and RXNEIE is not enabled.
-         *
-         * I think a possible condition is that enabling of DMA is preempted by
-         * an interrupt which takes a few more cycles to execute. In that case,
-         * it might be that the interrupt is set pending before DMA can take up
-         * work.
-         *
-         * If that’s the case, we simply should ignore that. Let’s add a boolean
-         * which tracks spurious interrupts and only triggers the debug
-         * condition if it happens twice.
-         */
-        if (_xbee->m_rx_spurious_rxneie) {
-            __asm__ volatile("bkpt #20"); // data cb called even though DMA should be going on
-        } else {
-            _xbee->m_rx_spurious_rxneie = true;
-        }
-        break;
-    }
-    case CommXBEE::RX_FRAME_CHECKSUM:
-    {
-        _xbee->m_rx_state = CommXBEE::RX_IDLE;
-        _xbee->m_rx_checksum = ch;
-        if (_xbee->m_rx_frame_type == 0x8b) {
-            _xbee->m_rx_packet_ready.trigger();
-        }
-        break;
-    }
-    }
-}
-
-
-CommXBEE::CommXBEE(USART &usart):
+CommXBEETX::CommXBEETX(USART &usart):
     m_usart(usart),
     m_buffer(),
     m_tx_curr_buf(0),
-    m_tx_prev_buf(1),
-    m_rx_overruns(0),
-    m_rx_errors(0)
+    m_tx_prev_buf(1)
 {
     for (tx_info_t &info: m_tx) {
         info.handle = buffer_t::INVALID_BUFFER;
@@ -132,15 +48,9 @@ CommXBEE::CommXBEE(USART &usart):
 }
 
 
-ASYNC_CALLABLE CommXBEE::step(const sched_clock::time_point now)
+ASYNC_CALLABLE CommXBEETX::step(const sched_clock::time_point now)
 {
     COROUTINE_INIT;
-    if (_xbee) {
-        __asm__ volatile("bkpt #20");
-    }
-    _xbee = this;
-    m_usart.set_rx_callback(&_xbee_usart_rx_data_cb);
-
     m_tx_curr_buf = 0;
 
     while (1) {
@@ -193,6 +103,170 @@ ASYNC_CALLABLE CommXBEE::step(const sched_clock::time_point now)
         m_tx_prev_buf = m_tx_curr_buf;
         m_tx_curr_buf = m_tx_curr_buf ^ 1;
 
+    }
+    COROUTINE_END;
+}
+
+
+CommXBEERX::CommXBEERX(USART &usart):
+    m_usart(usart),
+    m_overruns(0),
+    m_checksum_errors(0),
+    m_errors(0),
+    m_unknown_frames(0),
+    m_skipped_bytes(0)
+{
+
+}
+
+bool CommXBEERX::handle_frame()
+{
+    // frame type
+    switch (m_buf[0]) {
+    case 0x8b:  // transmit status
+    {
+        const uint8_t retries = m_buf[4];
+        const uint8_t status = m_buf[5];
+        m_tx_retries += retries;
+        if (status != 0) {
+            m_tx_lost += 1;
+        }
+        break;
+    }
+    default:
+    {
+        m_unknown_frames += 1;
+        break;
+    }
+    }
+
+    return true;
+}
+
+void CommXBEERX::set_rx_failed()
+{
+    m_xbee->m_errors += 1;
+    if (m_xbee->m_interrupt_state.handle != buffer_t::INVALID_BUFFER) {
+        m_xbee->m_buffer.release(m_xbee->m_interrupt_state.handle);
+    }
+    m_xbee->m_interrupt_state.state = CommXBEERX::RX_IDLE;
+}
+
+void CommXBEERX::rx_done_cb(bool success)
+{
+    if (!success) {
+        m_xbee->set_rx_failed();
+    } else {
+        m_xbee->m_buffer.set_ready(m_xbee->m_interrupt_state.handle);
+    }
+    m_xbee->m_interrupt_state.handle = buffer_t::INVALID_BUFFER;
+    m_xbee->m_interrupt_state.state = CommXBEERX::RX_IDLE;
+}
+
+void CommXBEERX::rx_data_cb(const uint8_t ch, const uint16_t sr)
+{
+    if (sr & USART_SR_FE || sr & USART_SR_NE) {
+        m_xbee->set_rx_failed();
+        return;
+    }
+    switch (m_xbee->m_interrupt_state.state) {
+    case CommXBEERX::RX_IDLE:
+    {
+        if (ch != 0x7e) {
+            m_xbee->m_skipped_bytes += 1;
+            return;
+        }
+        m_xbee->m_interrupt_state.state = CommXBEERX::RX_FRAME_LENGTH_MSB;
+        m_xbee->m_interrupt_state.length = 0;
+        break;
+    }
+    case CommXBEERX::RX_FRAME_LENGTH_MSB:
+    {
+        m_xbee->m_interrupt_state.length = ch << 8;
+        m_xbee->m_interrupt_state.state = CommXBEERX::RX_FRAME_LENGTH_LSB;
+        break;
+    }
+    case CommXBEERX::RX_FRAME_LENGTH_LSB:
+    {
+        m_xbee->m_interrupt_state.length |= ch;
+        if (m_xbee->m_interrupt_state.length > buffer_t::BUFFER_SIZE-1) {
+            // this is most likely a lost byte, and we somehow locked onto
+            // a part of another packet, which can happen in rare cases.
+            // we should abort reception immediately and wait for the next
+            // packet to lock at.
+            m_xbee->m_overruns += 1;
+            m_xbee->set_rx_failed();
+            m_xbee->m_interrupt_state.state = CommXBEERX::RX_IDLE;
+            break;
+        }
+        uint8_t *buf;
+        m_xbee->m_interrupt_state.handle = m_xbee->m_buffer.allocate(
+                    buf,
+                    m_xbee->m_interrupt_state.length+1
+                    );
+        if (m_xbee->m_interrupt_state.handle == buffer_t::INVALID_BUFFER) {
+            m_xbee->set_rx_failed();
+            m_xbee->m_overruns += 1;
+            m_xbee->m_interrupt_state.state = CommXBEERX::RX_IDLE;
+            break;
+        }
+
+        m_xbee->m_usart.recv_a(buf, m_xbee->m_interrupt_state.length+1,
+                              rx_done_cb);
+        m_xbee->m_interrupt_state.spurious_rxneie = false;
+
+        m_xbee->m_interrupt_state.state = CommXBEERX::RX_DATA;
+        break;
+    }
+    case CommXBEERX::RX_DATA:
+    {
+        /**
+         * I’m a bit lost here. I’m not sure what to do and how this interrupt
+         * can be triggered at all if DMA is going on and RXNEIE is not enabled.
+         *
+         * I think a possible condition is that enabling of DMA is preempted by
+         * an interrupt which takes a few more cycles to execute. In that case,
+         * it might be that the interrupt is set pending before DMA can take up
+         * work.
+         *
+         * If that’s the case, we simply should ignore that. Let’s add a boolean
+         * which tracks spurious interrupts and only triggers the debug
+         * condition if it happens twice.
+         */
+        if (m_xbee->m_interrupt_state.spurious_rxneie) {
+            __asm__ volatile("bkpt #20"); // data cb called even though DMA should be going on
+        } else {
+            m_xbee->m_interrupt_state.spurious_rxneie = true;
+        }
+        break;
+    }
+    }
+}
+
+ASYNC_CALLABLE CommXBEERX::step(const stm32_clock::time_point now)
+{
+    COROUTINE_INIT;
+    if (m_xbee) {
+        __asm__ volatile("bkpt #20");
+    }
+    m_xbee = this;
+    m_usart.set_rx_callback(&rx_data_cb);
+
+    while (1) {
+        await(m_buffer.any_buffer_ready());
+        m_handle = m_buffer.dequeue(m_buf, m_length, m_flags);
+        if (m_handle == buffer_t::INVALID_BUFFER) {
+            continue;
+        }
+
+        m_expected_checksum = calculate_checksum(m_buf, m_length-1);
+        if (m_buf[m_length-1] != m_expected_checksum) {
+            m_checksum_errors += 1;
+        }
+
+        if (handle_frame()) {
+            m_buffer.release(m_handle);
+        }
     }
     COROUTINE_END;
 }
