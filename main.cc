@@ -435,6 +435,29 @@ int main() {
     RCC->APB1RSTR = 0;
     RCC->APB2RSTR = 0;
 
+    RCC->APB2ENR = 0
+            | RCC_APB2ENR_IOPAEN
+            | RCC_APB2ENR_IOPBEN
+            | RCC_APB2ENR_IOPCEN
+            | RCC_APB2ENR_IOPDEN
+            | RCC_APB2ENR_IOPEEN
+            | RCC_APB2ENR_AFIOEN
+            | RCC_APB2ENR_USART1EN;
+    RCC->APB1ENR = 0
+            | RCC_APB1ENR_PWREN
+            | RCC_APB1ENR_BKPEN
+            | RCC_APB1ENR_TIM3EN
+            | RCC_APB1ENR_USART2EN
+            | RCC_APB1ENR_USART3EN
+            | RCC_APB1ENR_TIM2EN
+            | RCC_APB1ENR_TIM4EN
+            | RCC_APB1ENR_I2C1EN
+            ;
+    RCC->AHBENR = 0
+            | RCC_AHBENR_FLITFEN
+            | RCC_AHBENR_SRAMEN
+            | RCC_AHBENR_DMA1EN;
+
     GPIOA->CRL =
             GPIO_CRL_CNF0_0
             | GPIO_CRL_CNF1_0
@@ -478,28 +501,6 @@ int main() {
             | GPIO_CRL_CNF7_0;
 
     I2C1->CR1 = 0;
-
-    RCC->APB2ENR = 0
-            | RCC_APB2ENR_IOPAEN
-            | RCC_APB2ENR_IOPBEN
-            | RCC_APB2ENR_IOPCEN
-            | RCC_APB2ENR_IOPDEN
-            | RCC_APB2ENR_IOPEEN
-            | RCC_APB2ENR_AFIOEN;
-    RCC->APB1ENR = 0
-            | RCC_APB1ENR_PWREN
-            | RCC_APB1ENR_BKPEN
-            | RCC_APB1ENR_TIM3EN
-            | RCC_APB1ENR_USART2EN
-            | RCC_APB1ENR_USART3EN
-            | RCC_APB1ENR_TIM2EN
-            | RCC_APB1ENR_TIM4EN
-            | RCC_APB1ENR_I2C1EN
-            ;
-    RCC->AHBENR = 0
-            | RCC_AHBENR_FLITFEN
-            | RCC_AHBENR_SRAMEN
-            | RCC_AHBENR_DMA1EN;
 
     usart2.init(115200);
     usart3.init(115200, true); // enable support for CTS
