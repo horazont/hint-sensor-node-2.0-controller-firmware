@@ -16,7 +16,6 @@
 #include "usart.h"
 #include "lightsensor_freq.h"
 #include "onewire.h"
-#include "dht11.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
@@ -134,83 +133,6 @@ public:
             m_comm.buffer().set_ready(
                         m_out_buffer_handle,
                         sizeof(sbx_msg_type) + sizeof(sbx_msg_light_t));
-        }
-        COROUTINE_END;
-    }
-};
-
-
-class SampleDHT11: public Coroutine
-{
-public:
-    explicit SampleDHT11(CommInterfaceTX &comm):
-        m_comm(comm)
-    {
-
-    }
-
-private:
-    CommInterfaceTX &m_comm;
-
-    sched_clock::time_point m_last_start;
-    CommInterfaceTX::buffer_t::buffer_handle_t m_out_buffer_handle;
-    sbx_msg_t *m_out_buffer;
-    uint16_t m_out_length;
-
-    uint16_t m_timestamp;
-    uint16_t m_humidity;
-    uint16_t m_temperature;
-    bool m_valid;
-
-public:
-    void operator()()
-    {
-        Coroutine::operator()();
-        m_out_buffer_handle = CommInterfaceTX::buffer_t::INVALID_BUFFER;
-    }
-
-    COROUTINE_DECL
-    {
-//        static const char msg_chksum_err[] = "checksum error!";
-//        static const char msg_ok[] = "got data";
-//        static const char msg_sampling[] = "sampling...";
-
-        COROUTINE_INIT;
-        while (1) {
-//            await(usart2.send_c((const uint8_t*)&msg_sampling[0], sizeof(msg_sampling)));
-
-            dht11_sample_prep(m_humidity, m_temperature, m_valid);
-            await(dht11_trigger_c());
-            await(dht11_sample_fire_c());
-
-            if (!m_valid) {
-//                await(usart2.send_c((const uint8_t*)&msg_chksum_err[0], sizeof(msg_chksum_err)));
-                await(sleep_c(200));
-                continue;
-            }
-
-//            await(usart2.send_c((const uint8_t*)&msg_ok[0], sizeof(msg_ok)));
-
-            m_timestamp = sched_clock::now_raw();
-
-            while (m_out_buffer_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER) {
-                await(m_comm.buffer().any_buffer_free());
-                m_out_buffer_handle = m_comm.buffer().allocate(
-                            *((uint8_t**)&m_out_buffer),
-                            CommInterfaceTX::buffer_t::BUFFER_SIZE);
-            }
-
-            m_out_buffer->type = sbx_msg_type::SENSOR_DHT;
-            m_out_buffer->payload.dht11.timestamp = m_timestamp;
-            m_out_buffer->payload.dht11.humidity = m_humidity;
-            m_out_buffer->payload.dht11.temperature = m_temperature;
-
-            m_comm.buffer().set_ready(
-                        m_out_buffer_handle,
-                        sizeof(sbx_msg_type) + sizeof(sbx_msg_dht11_t));
-            m_out_buffer_handle = CommInterfaceTX::buffer_t::INVALID_BUFFER;
-
-            await(sleep_c(5000));
         }
         COROUTINE_END;
     }
@@ -631,7 +553,6 @@ int main() {
     ls_freq_init();
     imu_timed_init();
     stm32_clock::init();
-    dht11_init();
     // stm32_rtc::init();
     i2c_init();
 
