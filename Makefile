@@ -1,3 +1,5 @@
+STM32SPL ?= ../../../../stm32/stm32_spl/
+
 CC      = arm-none-eabi-gcc
 CXX     = arm-none-eabi-g++
 LD      = arm-none-eabi-ld
@@ -27,7 +29,7 @@ all: test
 
 CFLAGS +=  -Wall -Wextra -Werror -I./ -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles -fwrapv -static
 
-include ../stm32_spl/ST_STM32StdPeriph.mk
+include $(STM32SPL)/ST_STM32StdPeriph.mk
 
 CXXFLAGS := -std=c++11 -fno-exceptions -fno-rtti $(CFLAGS)
 CFLAGS := -std=c11 $(CFLAGS)
