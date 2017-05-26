@@ -488,6 +488,11 @@ int main() {
             | RCC_AHBENR_SRAMEN
             | RCC_AHBENR_DMA1EN;
 
+
+    // Remap USART3 RX/TX to other pins
+    AFIO->MAPR = 0
+            | AFIO_MAPR_USART3_REMAP_PARTIALREMAP;
+
     GPIOA->CRL =
             GPIO_CRL_CNF0_0
             | GPIO_CRL_CNF1_0
@@ -528,12 +533,20 @@ int main() {
     GPIOB->CRH =
             GPIO_CRH_CNF8_0
             | GPIO_CRH_CNF9_0
-            | GPIO_CRH_MODE10_1 | GPIO_CRH_CNF10_1
-            | GPIO_CRH_CNF11_0
+            // USART3 TX (original position, but we remapped it to PC10)
+            // | GPIO_CRH_MODE10_1 | GPIO_CRH_CNF10_1
+            // USART3 RX (original position, but we remapped it to PC11)
+            // | GPIO_CRH_CNF11_0
             | GPIO_CRH_CNF12_0
             | GPIO_CRH_CNF13_0
             | GPIO_CRH_MODE14_1
             | GPIO_CRH_MODE15_1;
+
+    GPIOC->CRH = 0
+            // USART3 TX (remapped!)
+            | GPIO_CRH_MODE10_1 | GPIO_CRH_CNF10_1
+            // USART3 RX (remapped!)
+            | GPIO_CRH_CNF11_0;
 
     GPIOD->CRL =
             GPIO_CRL_CNF0_0
