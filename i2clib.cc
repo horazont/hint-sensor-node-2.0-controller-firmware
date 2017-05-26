@@ -1,107 +1,17 @@
 #include "i2clib.h"
 
 #include "utils.h"
-#include "notify.h"
 
-#define DMA_TX_CHANNEL DMA1_Channel6
-#define DMA_RX_CHANNEL DMA1_Channel7
+I2C i2c1(I2C1, DMA1_Channel6, DMA1_Channel7);
+I2C i2c2(I2C2, DMA1_Channel4, DMA1_Channel5);
 
-enum i2c_state {
-    I2C_STATE_SELECT_REGISTER = 0,
-    I2C_STATE_TRANSFER_DATA = 1
-};
-
-struct i2c_task {
-    uint8_t device_address;
-    bool write_task;
-    uint8_t register_address;
-    uint8_t nbytes;
-    uint8_t offset;
-    enum i2c_state state;
-    notifier_t notify;
-
-    union {
-        uint8_t *w;
-        const uint8_t *r;
-    } buf;
-};
-
-static struct i2c_task curr_task;
-static volatile bool is_busy = false;
-
-
-static void short_delay() {
-    for (uint32_t i = 0; i < 100; ++i) {
-        __asm__ volatile("nop");
-    }
-}
-
-void i2c_init()
-{
-    is_busy = false;
-
-    I2C1->CR1 = I2C_CR1_SWRST;
-    short_delay();
-    I2C1->CR1 = 0;
-
-    I2C1->CCR = 0
-        | 180;
-    I2C1->TRISE = 36+1;
-
-    I2C1->CR2 = 0
-        | I2C_CR2_ITBUFEN
-        | I2C_CR2_ITEVTEN
-        | I2C_CR2_ITERREN
-        | 36  // frequency of APB1 domain, in MHz
-        ;
-
-    GPIOB->CRL = (GPIOB->CRL & ~(GPIO_CRL_MODE6 | GPIO_CRL_MODE7 |
-                                 GPIO_CRL_CNF6 | GPIO_CRL_CNF7))
-        | GPIO_CRL_MODE6_0 | GPIO_CRL_CNF6_1 | GPIO_CRL_CNF6_0
-        | GPIO_CRL_MODE7_0 | GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0
-        ;
-
-    // prepare DMA channel
-    DMA1_Channel6->CCR = 0
-            // priority level Very High
-            | DMA_CCR1_PL_0 | DMA_CCR1_PL_1
-            // memory and peripherial data size 8 bits
-            // memory increment mode enabled
-            | DMA_CCR1_MINC
-            // peripherial increment mode disabled
-            // circular mode disabled
-            // write to peripherial / read from memory
-            | DMA_CCR1_DIR
-            // enable full transfer and failed transfer interrupts
-            | DMA_CCR1_TCIE | DMA_CCR1_TEIE
-            // do not enable channel yet
-            ;
-    DMA1_Channel6->CPAR = (uint32_t)&I2C1->DR;
-
-    // prepare DMA channel
-    DMA1_Channel7->CCR = 0
-            // priority level Very High
-            | DMA_CCR1_PL_0 | DMA_CCR1_PL_1
-            // memory and peripherial data size 8 bits
-            // memory increment mode enabled
-            | DMA_CCR1_MINC
-            // peripherial increment mode disabled
-            // circular mode disabled
-            // read from peripherial / write to memory
-            // enable full transfer and failed transfer interrupts
-            | DMA_CCR1_TCIE | DMA_CCR1_TEIE
-            // do not enable channel yet
-            ;
-    DMA1_Channel7->CPAR = (uint32_t)&I2C1->DR;
-}
-
-void i2c_workaround_reset()
+void i2c1_workaround_reset()
 {
     if (!(I2C1->SR2 & I2C_SR2_BUSY)) {
         // no workaround needed
         return;
     }
-    i2c_disable();
+    i2c1.disable();
 
     // configure as general-purpose open-drain outputs
     GPIOB->CRL = (GPIOB->CRL & ~(GPIO_CRL_MODE6 | GPIO_CRL_MODE7 |
@@ -125,179 +35,280 @@ void i2c_workaround_reset()
     // wait for line to go high
     while (!(GPIOB->IDR & GPIO_IDR_IDR7));
 
-    i2c_init();
-    i2c_enable();
+    i2c1.init();
+    i2c1.enable();
 }
 
-void i2c_enable()
+IRQn_Type I2C::get_ev_irqn(const I2C_TypeDef * const i2c)
 {
-    I2C1->CR1 |= I2C_CR1_PE;
-    NVIC_EnableIRQ(I2C1_EV_IRQn);
-    NVIC_EnableIRQ(I2C1_ER_IRQn);
-    NVIC_EnableIRQ(DMA1_Channel6_IRQn);
-    NVIC_EnableIRQ(DMA1_Channel7_IRQn);
+    if (i2c == I2C1) {
+        return I2C1_EV_IRQn;
+    } else if (i2c == I2C2) {
+        return I2C2_EV_IRQn;
+    }
+    return NonMaskableInt_IRQn;
 }
 
-void i2c_disable()
+IRQn_Type I2C::get_er_irqn(const I2C_TypeDef * const i2c)
 {
-    NVIC_DisableIRQ(DMA1_Channel6_IRQn);
-    NVIC_DisableIRQ(DMA1_Channel7_IRQn);
-    NVIC_DisableIRQ(I2C1_EV_IRQn);
-    NVIC_DisableIRQ(I2C2_EV_IRQn);
-    I2C1->CR1 &= ~I2C_CR1_PE;
+    if (i2c == I2C1) {
+        return I2C1_ER_IRQn;
+    } else if (i2c == I2C2) {
+        return I2C2_ER_IRQn;
+    }
+    return NonMaskableInt_IRQn;
 }
 
-static void _i2c_prep_smbus_read(const uint8_t device_address,
-                                 const uint8_t register_address,
-                                 const uint8_t nbytes,
-                                 uint8_t *buf)
+
+static void short_delay() {
+    for (uint32_t i = 0; i < 100; ++i) {
+        __asm__ volatile("nop");
+    }
+}
+
+
+I2C::I2C(I2C_TypeDef *bus,
+         DMA_Channel_TypeDef *tx_dma,
+         DMA_Channel_TypeDef *rx_dma):
+    m_i2c(bus),
+    m_tx_dma(tx_dma),
+    m_rx_dma(rx_dma),
+    m_ev_irq(get_ev_irqn(bus)),
+    m_er_irq(get_er_irqn(bus)),
+    m_tx_dma_irq(get_dma_irqn(tx_dma)),
+    m_rx_dma_irq(get_dma_irqn(rx_dma))
 {
-    curr_task.device_address = device_address;
-    curr_task.write_task = false;
-    curr_task.register_address = register_address;
-    curr_task.nbytes = nbytes;
-    curr_task.offset = 0;
-    curr_task.buf.w = buf;
-    curr_task.state = I2C_STATE_SELECT_REGISTER;
-    curr_task.notify.reset();
 
-    DMA_RX_CHANNEL->CCR &= ~DMA_CCR1_EN;
-    DMA_RX_CHANNEL->CMAR = (uint32_t)buf;
-    DMA_RX_CHANNEL->CNDTR = nbytes;
-    DMA_RX_CHANNEL->CCR |= DMA_CCR1_EN;
-
-    I2C1->CR2 = (I2C1->CR2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN;
-    I2C1->CR1 |= I2C_CR1_START;
 }
 
-static void _i2c_prep_smbus_write(const uint8_t device_address,
-                                  const uint8_t register_address,
-                                  const uint8_t nbytes,
-                                  const uint8_t *buf)
+
+void I2C::init()
 {
-    curr_task.device_address = device_address;
-    curr_task.write_task = true;
-    curr_task.register_address = register_address;
-    curr_task.nbytes = nbytes;
-    curr_task.offset = 0;
-    curr_task.buf.r = buf;
-    curr_task.state = I2C_STATE_SELECT_REGISTER;
-    curr_task.notify.reset();
+    m_is_busy = false;
 
-    DMA_TX_CHANNEL->CCR &= ~DMA_CCR1_EN;
-    DMA_TX_CHANNEL->CMAR = (uint32_t)buf;
-    DMA_TX_CHANNEL->CNDTR = nbytes;
-    DMA_TX_CHANNEL->CCR |= DMA_CCR1_EN;
+    m_i2c->CR1 = I2C_CR1_SWRST;
+    short_delay();
+    m_i2c->CR1 = 0;
 
-    I2C1->CR2 = (I2C1->CR2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN;
-    I2C1->CR1 |= I2C_CR1_START;
+    m_i2c->CCR = 0
+        | 180;
+    m_i2c->TRISE = 36+1;
+
+    m_i2c->CR2 = 0
+        | I2C_CR2_ITBUFEN
+        | I2C_CR2_ITEVTEN
+        | I2C_CR2_ITERREN
+        | 36  // frequency of APB1 domain, in MHz
+        ;
+
+    // prepare DMA channel
+    m_tx_dma->CCR = 0;
+    m_tx_dma->CCR = 0
+            // priority level Very High
+            | DMA_CCR1_PL_0 | DMA_CCR1_PL_1
+            // memory and peripherial data size 8 bits
+            // memory increment mode enabled
+            | DMA_CCR1_MINC
+            // peripherial increment mode disabled
+            // circular mode disabled
+            // write to peripherial / read from memory
+            | DMA_CCR1_DIR
+            // enable full transfer and failed transfer interrupts
+            | DMA_CCR1_TCIE | DMA_CCR1_TEIE
+            // do not enable channel yet
+            ;
+    m_tx_dma->CPAR = (uint32_t)&m_i2c->DR;
+
+    // prepare DMA channel
+    m_rx_dma->CCR = 0;
+    m_rx_dma->CCR = 0
+            // priority level Very High
+            | DMA_CCR1_PL_0 | DMA_CCR1_PL_1
+            // memory and peripherial data size 8 bits
+            // memory increment mode enabled
+            | DMA_CCR1_MINC
+            // peripherial increment mode disabled
+            // circular mode disabled
+            // read from peripherial / write to memory
+            // enable full transfer and failed transfer interrupts
+            | DMA_CCR1_TCIE | DMA_CCR1_TEIE
+            // do not enable channel yet
+            ;
+    m_rx_dma->CPAR = (uint32_t)&m_i2c->DR;
 }
 
-void i2c_smbus_read(
+void I2C::enable()
+{
+    m_i2c->CR1 |= I2C_CR1_PE;
+    NVIC_EnableIRQ(m_ev_irq);
+    NVIC_EnableIRQ(m_er_irq);
+    NVIC_EnableIRQ(m_tx_dma_irq);
+    NVIC_EnableIRQ(m_rx_dma_irq);
+}
+
+void I2C::disable()
+{
+    NVIC_DisableIRQ(m_rx_dma_irq);
+    NVIC_DisableIRQ(m_tx_dma_irq);
+    NVIC_DisableIRQ(m_er_irq);
+    NVIC_DisableIRQ(m_ev_irq);
+    m_i2c->CR1 &= ~I2C_CR1_PE;
+}
+
+void I2C::_prep_smbus_read(const uint8_t device_address,
+                           const uint8_t register_address,
+                           const uint8_t nbytes,
+                           uint8_t *buf)
+{
+    m_curr_task.device_address = device_address;
+    m_curr_task.write_task = false;
+    m_curr_task.register_address = register_address;
+    m_curr_task.nbytes = nbytes;
+    m_curr_task.offset = 0;
+    m_curr_task.buf.w = buf;
+    m_curr_task.state = I2C_STATE_SELECT_REGISTER;
+    m_curr_task.notify.reset();
+
+    m_rx_dma->CCR &= ~DMA_CCR1_EN;
+    m_rx_dma->CMAR = (uint32_t)buf;
+    m_rx_dma->CNDTR = nbytes;
+    m_rx_dma->CCR |= DMA_CCR1_EN;
+
+    m_i2c->CR2 = (m_i2c->CR2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN;
+    m_i2c->CR1 |= I2C_CR1_START;
+}
+
+void I2C::_prep_smbus_write(const uint8_t device_address,
+                            const uint8_t register_address,
+                            const uint8_t nbytes,
+                            const uint8_t *buf)
+{
+    m_curr_task.device_address = device_address;
+    m_curr_task.write_task = true;
+    m_curr_task.register_address = register_address;
+    m_curr_task.nbytes = nbytes;
+    m_curr_task.offset = 0;
+    m_curr_task.buf.r = buf;
+    m_curr_task.state = I2C_STATE_SELECT_REGISTER;
+    m_curr_task.notify.reset();
+
+    m_tx_dma->CCR &= ~DMA_CCR1_EN;
+    m_tx_dma->CMAR = (uint32_t)buf;
+    m_tx_dma->CNDTR = nbytes;
+    m_tx_dma->CCR |= DMA_CCR1_EN;
+
+    m_i2c->CR2 = (m_i2c->CR2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN;
+    m_i2c->CR1 |= I2C_CR1_START;
+}
+
+void I2C::smbus_read(
         const uint8_t device_address,
         const uint8_t register_address,
         const uint8_t nbytes,
         uint8_t *buf)
 {
-    _i2c_prep_smbus_read(device_address, register_address, nbytes, buf);
-    curr_task.notify.wait_for_ready();
+    _prep_smbus_read(device_address, register_address, nbytes, buf);
+    m_curr_task.notify.wait_for_ready();
 }
 
-void i2c_smbus_write(
+void I2C::smbus_write(
         const uint8_t device_address,
         const uint8_t register_address,
         const uint8_t nbytes,
         const uint8_t *buf)
 {
-    _i2c_prep_smbus_write(device_address, register_address, nbytes, buf);
-    curr_task.notify.wait_for_ready();
+    _prep_smbus_write(device_address, register_address, nbytes, buf);
+    m_curr_task.notify.wait_for_ready();
 }
 
-bool i2c_smbus_read_a(const uint8_t device_address,
-                    const uint8_t register_address,
-                    const uint8_t nbytes,
-                    uint8_t *buf)
+bool I2C::smbus_read_a(const uint8_t device_address,
+                       const uint8_t register_address,
+                       const uint8_t nbytes,
+                       uint8_t *buf)
 {
-    _i2c_prep_smbus_read(device_address, register_address, nbytes, buf);
+    _prep_smbus_read(device_address, register_address, nbytes, buf);
     return true;
 }
 
-bool i2c_smbus_write_a(const uint8_t device_address,
-                     const uint8_t register_address,
-                     const uint8_t nbytes,
-                     const uint8_t *buf)
+bool I2C::smbus_write_a(const uint8_t device_address,
+                        const uint8_t register_address,
+                        const uint8_t nbytes,
+                        const uint8_t *buf)
 {
-    _i2c_prep_smbus_write(device_address, register_address, nbytes, buf);
+    _prep_smbus_write(device_address, register_address, nbytes, buf);
     return true;
 }
 
-ASYNC_CALLABLE i2c_smbus_readc(
+ASYNC_CALLABLE I2C::smbus_readc(
         const uint8_t device_address,
         const uint8_t register_address,
         const uint8_t nbytes,
         uint8_t *buf)
 {
-    _i2c_prep_smbus_read(device_address, register_address, nbytes, buf);
-    return curr_task.notify.ready_c();
+    _prep_smbus_read(device_address, register_address, nbytes, buf);
+    return m_curr_task.notify.ready_c();
 }
 
-ASYNC_CALLABLE i2c_smbus_writec(
+ASYNC_CALLABLE I2C::smbus_writec(
         const uint8_t device_address,
         const uint8_t register_address,
         const uint8_t nbytes,
         const uint8_t *buf)
 {
-    _i2c_prep_smbus_write(device_address, register_address, nbytes, buf);
-    return curr_task.notify.ready_c();
+    _prep_smbus_write(device_address, register_address, nbytes, buf);
+    return m_curr_task.notify.ready_c();
 }
 
 
-void I2C1_EV_IRQHandler()
+template <I2C *i2c_obj>
+static inline void ev_irq_handler()
 {
-    const uint8_t sr1 = I2C1->SR1;
+    I2C_TypeDef *const i2c = i2c_obj->m_i2c;
+    I2C::i2c_task &curr_task = i2c_obj->m_curr_task;
+    const uint8_t sr1 = i2c->SR1;
     if (sr1 & I2C_SR1_SB) {
 //        USART2->DR = 's';
         // start generated
-        if (curr_task.state == I2C_STATE_SELECT_REGISTER) {
-            I2C1->DR = curr_task.device_address << 1;
+        if (curr_task.state == I2C::I2C_STATE_SELECT_REGISTER) {
+            i2c->DR = curr_task.device_address << 1;
         } else {
-            I2C1->DR = curr_task.device_address << 1
+            i2c->DR = curr_task.device_address << 1
                 | (curr_task.write_task ? 0 : 1);
         }
-        I2C1->CR1 |= I2C_CR1_ACK;
+        i2c->CR1 |= I2C_CR1_ACK;
     } else if (sr1 & I2C_SR1_ADDR) {
 //        USART2->DR = 'a';
         // address generated
         // find out whether we were about to send or to receive
-        const uint8_t sr2 = I2C1->SR2;
+        const uint8_t sr2 = i2c->SR2;
         if (!(sr2 & I2C_SR2_TRA)) {
 //            USART2->DR = 'R';
             // receiver mode
             // fire up DMA mode
-            const uint8_t cr2 = I2C1->CR2;
-            I2C1->CR2 = (cr2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_DMAEN | I2C_CR2_LAST;
+            const uint8_t cr2 = i2c->CR2;
+            i2c->CR2 = (cr2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_DMAEN | I2C_CR2_LAST;
         }
     } else if (sr1 & I2C_SR1_TXE) {
-        if (curr_task.state == I2C_STATE_SELECT_REGISTER) {
+        if (curr_task.state == I2C::I2C_STATE_SELECT_REGISTER) {
             uint8_t register_address = curr_task.register_address;
             if (curr_task.nbytes > 1) {
                 register_address |= 0x80;
             }
-            I2C1->DR = register_address;
+            i2c->DR = register_address;
             if (curr_task.write_task) {
                 // continue in DMA mode
 //                USART2->DR = '|';
-                const uint8_t cr2 = I2C1->CR2;
-                I2C1->CR2 = (cr2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_DMAEN;
+                const uint8_t cr2 = i2c->CR2;
+                i2c->CR2 = (cr2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_DMAEN;
             } else {
                 // repeated start condition for the read part
-                I2C1->CR1 |= I2C_CR1_START;
+                i2c->CR1 |= I2C_CR1_START;
 //                USART2->DR = 'r';
             }
-            curr_task.state = I2C_STATE_TRANSFER_DATA;
+            curr_task.state = I2C::I2C_STATE_TRANSFER_DATA;
         } else if (curr_task.write_task) {
             // USART2->DR = 't';
-            I2C1->CR1 |= I2C_CR1_STOP;
+            i2c->CR1 |= I2C_CR1_STOP;
             curr_task.notify.trigger();
         }
     } else if (sr1 & I2C_SR1_RXNE) {
@@ -307,9 +318,11 @@ void I2C1_EV_IRQHandler()
     }
 }
 
-void I2C1_ER_IRQHandler()
+template <I2C *i2c_obj>
+static inline void er_irq_handler()
 {
-    const uint16_t sr1 = I2C1->SR1;
+    I2C_TypeDef *const i2c = i2c_obj->m_i2c;
+    const uint16_t sr1 = i2c->SR1;
     if (sr1 & I2C_SR1_TIMEOUT) {
         USART2->DR = 'T';
     } else if (sr1 & I2C_SR1_PECERR) {
@@ -319,31 +332,74 @@ void I2C1_ER_IRQHandler()
     } else {
         USART2->DR = nybble_to_hex(sr1 >> 8);
     }
-    I2C1->SR1 = 0;
-    I2C1->CR1 |= I2C_CR1_STOP;
+    i2c->SR1 = 0;
+    i2c->CR1 |= I2C_CR1_STOP;
+}
+
+template <I2C *i2c_obj, uint32_t channel, uint32_t channel_shift>
+void dma_tx_irq_handler()
+{
+    const uint32_t flags = DMA1->ISR;
+    if (flags & (DMA_ISR_TCIF1 << channel_shift)) {
+//        USART2->DR = 'D';
+    } else if (flags & (DMA_ISR_TEIF1 << channel_shift)) {
+//        USART2->DR = 'E';
+    }
+    // clear all channel 6 interrupts
+    DMA1->IFCR = (DMA_IFCR_CHTIF1 | DMA_IFCR_CGIF1 | DMA_IFCR_CTCIF1 | DMA_IFCR_CTEIF1) << channel_shift;
+}
+
+template <I2C *i2c_obj, uint32_t channel, uint32_t channel_shift>
+void dma_rx_irq_handler()
+{
+    I2C::i2c_task &curr_task = i2c_obj->m_curr_task;
+    // for RX, I2C takes care of the STOP condition by itself
+    const uint32_t flags = DMA1->ISR;
+    if (flags & (DMA_ISR_TCIF1 << channel_shift)) {
+        curr_task.notify.trigger();
+    } else if (flags & (DMA_ISR_TEIF1 << channel_shift)) {
+        curr_task.notify.trigger();
+    }
+    // clear all channel 7 interrupts
+    DMA1->IFCR = (DMA_IFCR_CHTIF1 | DMA_IFCR_CGIF1 | DMA_IFCR_CTCIF1 | DMA_IFCR_CTEIF1) << channel_shift;
+}
+
+void I2C1_EV_IRQHandler()
+{
+    ev_irq_handler<&i2c1>();
+}
+
+void I2C1_ER_IRQHandler()
+{
+    er_irq_handler<&i2c1>();
+}
+
+void I2C2_EV_IRQHandler()
+{
+    ev_irq_handler<&i2c2>();
+}
+
+void I2C2_ER_IRQHandler()
+{
+    er_irq_handler<&i2c2>();
+}
+
+void DMA1_Channel4_IRQHandler()
+{
+    dma_tx_irq_handler<&i2c2, (uint32_t)DMA1_Channel4, 12>();
+}
+
+void DMA1_Channel5_IRQHandler()
+{
+    dma_rx_irq_handler<&i2c2, (uint32_t)DMA1_Channel5, 16>();
 }
 
 void DMA1_Channel6_IRQHandler()
 {
-    const uint32_t flags = DMA1->ISR;
-    if (flags & DMA_ISR_TCIF6) {
-//        USART2->DR = 'D';
-    } else if (flags & DMA_ISR_TEIF6) {
-//        USART2->DR = 'E';
-    }
-    // clear all channel 6 interrupts
-    DMA1->IFCR = DMA_IFCR_CHTIF6 | DMA_IFCR_CGIF6 | DMA_IFCR_CTCIF6 | DMA_IFCR_CTEIF6;
+    dma_tx_irq_handler<&i2c1, (uint32_t)DMA1_Channel6, 20>();
 }
 
 void DMA1_Channel7_IRQHandler()
 {
-    // for RX, I2C takes care of the STOP condition by itself
-    const uint32_t flags = DMA1->ISR;
-    if (flags & DMA_ISR_TCIF7) {
-        curr_task.notify.trigger();
-    } else if (flags & DMA_ISR_TEIF7) {
-        curr_task.notify.trigger();
-    }
-    // clear all channel 7 interrupts
-    DMA1->IFCR = DMA_IFCR_CHTIF7 | DMA_IFCR_CGIF7 | DMA_IFCR_CTCIF7 | DMA_IFCR_CTEIF7;
+    dma_rx_irq_handler<&i2c1, (uint32_t)DMA1_Channel7, 24>();
 }

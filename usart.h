@@ -54,7 +54,6 @@ public:
 
 private:
     static IRQn_Type get_irqn(USART_TypeDef *usart);
-    static IRQn_Type get_dma_irqn(DMA_Channel_TypeDef *dmach);
 
 private:
     USART_TypeDef *const m_usart;

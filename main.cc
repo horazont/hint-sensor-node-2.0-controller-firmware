@@ -625,7 +625,7 @@ int main() {
     // ensure that ADC doesn’t go up in flames
     RCC->CFGR |= RCC_CFGR_ADCPRE_DIV8;
 
-    RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST | RCC_APB1RSTR_TIM4RST | RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_USART2RST | RCC_APB1RSTR_USART3RST;
+    RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST | RCC_APB1RSTR_TIM4RST | RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_I2C2RST | RCC_APB1RSTR_USART2RST | RCC_APB1RSTR_USART3RST;
     RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST | RCC_APB2RSTR_TIM1RST | RCC_APB2RSTR_USART1RST | RCC_APB2RSTR_ADC1RST;
 
     RCC->APB2ENR = 0
@@ -647,6 +647,7 @@ int main() {
             | RCC_APB1ENR_TIM2EN
             | RCC_APB1ENR_TIM4EN
             | RCC_APB1ENR_I2C1EN
+            | RCC_APB1ENR_I2C2EN
             ;
     RCC->AHBENR = 0
             | RCC_AHBENR_FLITFEN
@@ -711,6 +712,10 @@ int main() {
             | GPIO_CRH_CNF14_0
             | GPIO_CRH_CNF15_0;
 
+    GPIOB->CRL = (GPIOB->CRL & ~(GPIO_CRL_MODE6 | GPIO_CRL_MODE7 |
+                                 GPIO_CRL_CNF6 | GPIO_CRL_CNF7))
+        ;
+
     GPIOB->CRL =
             GPIO_CRL_CNF0_0
             | GPIO_CRL_CNF1_0
@@ -719,7 +724,9 @@ int main() {
             | GPIO_CRL_CNF4_0
             // DHT send
             | GPIO_CRL_MODE5_1 | GPIO_CRL_MODE5_0 | GPIO_CRL_CNF5_0
+            // I2C1 SCL
             | GPIO_CRL_MODE6_0 | GPIO_CRL_CNF6_1 | GPIO_CRL_CNF6_0
+            // I2C1 SDA
             | GPIO_CRL_MODE7_0 | GPIO_CRL_CNF7_1 | GPIO_CRL_CNF7_0
             ;
 
@@ -764,11 +771,11 @@ int main() {
     imu_timed_init();
     stm32_clock::init();
     // stm32_rtc::init();
-    i2c_init();
     adc_init();
+    i2c1.init();
 
-    i2c_enable();
-    i2c_workaround_reset();
+    i2c1.enable();
+    i2c1_workaround_reset();
 
     static const uint8_t config_20[] = {
         // at 0x20
@@ -853,6 +860,8 @@ int main() {
         }
     }*/
     // stm32_rtc::enable();
+
+    puts("bootup complete!\n");
 
     scheduler.add_task(&commtx);
     // scheduler.add_task(&commrx);

@@ -1,6 +1,7 @@
 #include "usart.h"
 
 #include "config.h"
+#include "utils.h"
 
 
 USART usart1(USART1, nullptr, nullptr);
@@ -30,27 +31,6 @@ IRQn_Type USART::get_irqn(USART_TypeDef *usart)
         return USART3_IRQn;
     } else {
         // this will hard-fault when it’s enabled
-        return NonMaskableInt_IRQn;
-    }
-}
-
-IRQn_Type USART::get_dma_irqn(DMA_Channel_TypeDef *dmach)
-{
-    if (dmach == DMA1_Channel1) {
-        return DMA1_Channel1_IRQn;
-    } else if (dmach == DMA1_Channel2) {
-        return DMA1_Channel2_IRQn;
-    } else if (dmach == DMA1_Channel3) {
-        return DMA1_Channel3_IRQn;
-    } else if (dmach == DMA1_Channel4) {
-        return DMA1_Channel4_IRQn;
-    } else if (dmach == DMA1_Channel5) {
-        return DMA1_Channel5_IRQn;
-    } else if (dmach == DMA1_Channel6) {
-        return DMA1_Channel6_IRQn;
-    } else if (dmach == DMA1_Channel7) {
-        return DMA1_Channel7_IRQn;
-    } else {
         return NonMaskableInt_IRQn;
     }
 }
