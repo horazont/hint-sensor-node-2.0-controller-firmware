@@ -234,6 +234,21 @@ def dump_status_packet(packet):
     print("--- END STATUS PACKET ---")
 
 
+def dump_light_packet(packet):
+    print("--- BEGIN LIGHT PACKET ---")
+    for i in range(6):
+        t, *chs = LightSensorSample.unpack(
+            packet[:LightSensorSample.size]
+        )
+        packet = packet[LightSensorSample.size:]
+        print("time = {}; RGBL = {}".format(
+            t,
+            ", ".join(str(ch) for ch in chs)
+        ))
+
+    print("--- END LIGHT PACKET ---")
+
+
 def main():
     import argparse
 
@@ -294,8 +309,8 @@ def main():
             elif type_ == 0xf3:
                 dump_dht11_packet(payload[1:])
             elif type_ == 0xf4:
+                dump_light_packet(payload[1:])
                 # light_stream.process(payload[1:])
-                print(type_)
             elif type_ == 0x82:
                 dump_status_packet(payload[1:])
             else:
