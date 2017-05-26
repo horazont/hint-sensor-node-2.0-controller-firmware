@@ -215,7 +215,7 @@ void CommXBEERX::rx_data_cb(const uint8_t ch, const uint16_t sr)
         }
 
         m_xbee->m_usart.recv_a(buf, m_xbee->m_interrupt_state.length+1,
-                              rx_done_cb);
+                               rx_done_cb);
         m_xbee->m_interrupt_state.spurious_rxneie = false;
 
         m_xbee->m_interrupt_state.state = CommXBEERX::RX_DATA;

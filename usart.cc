@@ -19,6 +19,7 @@ USART::USART(USART_TypeDef *usart,
     m_rx_dma_irq(get_dma_irqn(rx_dma))
 {
     if (m_tx_dma) {
+        m_tx_dma->CCR = 0;
         m_tx_dma->CCR = 0
                 // peripherial-to-memory mode
                 // high priority
@@ -39,6 +40,7 @@ USART::USART(USART_TypeDef *usart,
         m_tx_dma->CPAR = (uint32_t)&usart->DR;
     }
     if (m_rx_dma) {
+        m_rx_dma->CCR = 0;
         m_rx_dma->CCR = 0
                 // peripherial-to-memory mode
                 // high priority
