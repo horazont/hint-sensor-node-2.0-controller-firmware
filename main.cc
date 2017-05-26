@@ -171,7 +171,7 @@ private:
     uint16_t m_average;
 
     std::array<uint8_t, SENSOR_STREAM::MAX_BITMAP_SIZE> m_bitmap_buffer;
-    std::array<uint8_t, MAX_XBEE_PAYLOAD_SIZE> m_packet_buffer;
+    std::array<uint8_t, MAX_FRAME_PAYLOAD_SIZE> m_packet_buffer;
     uint8_t m_bitmap_byte;
     uint8_t m_bitmap_bit;
 

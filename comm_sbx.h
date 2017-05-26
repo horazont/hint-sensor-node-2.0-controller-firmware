@@ -4,9 +4,9 @@
 #include <cstdint>
 
 #ifdef XBEE_USE_ENCRYPTION
-static constexpr std::size_t MAX_XBEE_PAYLOAD_SIZE = 66;
+static constexpr std::size_t MAX_FRAME_PAYLOAD_SIZE = 66;
 #else
-static constexpr std::size_t MAX_XBEE_PAYLOAD_SIZE = 84;
+static constexpr std::size_t MAX_FRAME_PAYLOAD_SIZE = 128;
 #endif
 
 #define SBX_LIGHT_SENSOR_SAMPLES (6)
@@ -176,7 +176,7 @@ struct COMM_PACKED sbx_msg_t
 namespace SENSOR_STREAM {
 
 static constexpr std::size_t MAX_PAYLOAD_SIZE =
-        ::MAX_XBEE_PAYLOAD_SIZE - sizeof(::sbx_msg_type);
+        ::MAX_FRAME_PAYLOAD_SIZE - sizeof(::sbx_msg_type);
 static constexpr std::size_t MAX_ENCODED_SAMPLE_BYTES =
         (MAX_PAYLOAD_SIZE - sizeof(::sbx_msg_sensor_stream_t));
 static constexpr std::size_t MAX_SAMPLES =
