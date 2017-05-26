@@ -15,7 +15,7 @@ CPFLAGS = -Obinary
 ODFLAGS = -S
 
 c_sources = $(wildcard *.c)
-cxx_sources = $(wildcard *.cc)
+cxx_sources = $(filter-out comm_xbee.cc,$(wildcard *.cc))
 headers = $(wildcard *.h)
 obj_dir = .objs/
 c_objs = $(patsubst %.c,$(obj_dir)%.o,$(c_sources))

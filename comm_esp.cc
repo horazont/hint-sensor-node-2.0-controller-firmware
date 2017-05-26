@@ -1,10 +1,10 @@
-#include "comm_xbee.h"
+#include "comm_esp.h"
 
 #include <cstring>
 #include <cstdio>
 
 
-CommXBEERX *CommXBEERX::m_xbee = nullptr;
+CommESPRX *CommESPRX::m_esp = nullptr;
 
 
 static uint8_t calculate_checksum(const uint8_t *buf, const uint16_t len)
@@ -17,7 +17,7 @@ static uint8_t calculate_checksum(const uint8_t *buf, const uint16_t len)
 }
 
 
-CommXBEETX::CommXBEETX(USART &usart):
+CommESPTX::CommESPTX(USART &usart):
     m_usart(usart),
     m_buffer(),
     m_tx_curr_buf(0),
@@ -48,7 +48,7 @@ CommXBEETX::CommXBEETX(USART &usart):
 }
 
 
-ASYNC_CALLABLE CommXBEETX::step(const sched_clock::time_point now)
+ASYNC_CALLABLE CommESPTX::step(const sched_clock::time_point now)
 {
     COROUTINE_INIT;
     m_tx_curr_buf = 0;
@@ -111,7 +111,7 @@ ASYNC_CALLABLE CommXBEETX::step(const sched_clock::time_point now)
 }
 
 
-CommXBEERX::CommXBEERX(USART &usart):
+CommESPRX::CommESPRX(USART &usart):
     m_usart(usart),
     m_overruns(0),
     m_checksum_errors(0),
@@ -122,7 +122,7 @@ CommXBEERX::CommXBEERX(USART &usart):
 
 }
 
-bool CommXBEERX::handle_frame()
+bool CommESPRX::handle_frame()
 {
     // frame type
     switch (m_buf[0]) {
@@ -146,82 +146,82 @@ bool CommXBEERX::handle_frame()
     return true;
 }
 
-void CommXBEERX::set_rx_failed()
+void CommESPRX::set_rx_failed()
 {
-    m_xbee->m_errors += 1;
-    if (m_xbee->m_interrupt_state.handle != buffer_t::INVALID_BUFFER) {
-        m_xbee->m_buffer.release(m_xbee->m_interrupt_state.handle);
+    m_esp->m_errors += 1;
+    if (m_esp->m_interrupt_state.handle != buffer_t::INVALID_BUFFER) {
+        m_esp->m_buffer.release(m_esp->m_interrupt_state.handle);
     }
-    m_xbee->m_interrupt_state.state = CommXBEERX::RX_IDLE;
+    m_esp->m_interrupt_state.state = CommESPRX::RX_IDLE;
 }
 
-void CommXBEERX::rx_done_cb(bool success)
+void CommESPRX::rx_done_cb(bool success)
 {
     if (!success) {
-        m_xbee->set_rx_failed();
+        m_esp->set_rx_failed();
     } else {
-        m_xbee->m_buffer.set_ready(m_xbee->m_interrupt_state.handle);
+        m_esp->m_buffer.set_ready(m_esp->m_interrupt_state.handle);
     }
-    m_xbee->m_interrupt_state.handle = buffer_t::INVALID_BUFFER;
-    m_xbee->m_interrupt_state.state = CommXBEERX::RX_IDLE;
+    m_esp->m_interrupt_state.handle = buffer_t::INVALID_BUFFER;
+    m_esp->m_interrupt_state.state = CommESPRX::RX_IDLE;
 }
 
-void CommXBEERX::rx_data_cb(const uint8_t ch, const uint16_t sr)
+void CommESPRX::rx_data_cb(const uint8_t ch, const uint16_t sr)
 {
     if (sr & USART_SR_FE || sr & USART_SR_NE) {
-        m_xbee->set_rx_failed();
+        m_esp->set_rx_failed();
         return;
     }
-    switch (m_xbee->m_interrupt_state.state) {
-    case CommXBEERX::RX_IDLE:
+    switch (m_esp->m_interrupt_state.state) {
+    case CommESPRX::RX_IDLE:
     {
         if (ch != 0x7e) {
-            m_xbee->m_skipped_bytes += 1;
+            m_esp->m_skipped_bytes += 1;
             return;
         }
-        m_xbee->m_interrupt_state.state = CommXBEERX::RX_FRAME_LENGTH_MSB;
-        m_xbee->m_interrupt_state.length = 0;
+        m_esp->m_interrupt_state.state = CommESPRX::RX_FRAME_LENGTH_MSB;
+        m_esp->m_interrupt_state.length = 0;
         break;
     }
-    case CommXBEERX::RX_FRAME_LENGTH_MSB:
+    case CommESPRX::RX_FRAME_LENGTH_MSB:
     {
-        m_xbee->m_interrupt_state.length = ch << 8;
-        m_xbee->m_interrupt_state.state = CommXBEERX::RX_FRAME_LENGTH_LSB;
+        m_esp->m_interrupt_state.length = ch << 8;
+        m_esp->m_interrupt_state.state = CommESPRX::RX_FRAME_LENGTH_LSB;
         break;
     }
-    case CommXBEERX::RX_FRAME_LENGTH_LSB:
+    case CommESPRX::RX_FRAME_LENGTH_LSB:
     {
-        m_xbee->m_interrupt_state.length |= ch;
-        if (m_xbee->m_interrupt_state.length > buffer_t::BUFFER_SIZE-1) {
+        m_esp->m_interrupt_state.length |= ch;
+        if (m_esp->m_interrupt_state.length > buffer_t::BUFFER_SIZE-1) {
             // this is most likely a lost byte, and we somehow locked onto
             // a part of another packet, which can happen in rare cases.
             // we should abort reception immediately and wait for the next
             // packet to lock at.
-            m_xbee->m_overruns += 1;
-            m_xbee->set_rx_failed();
-            m_xbee->m_interrupt_state.state = CommXBEERX::RX_IDLE;
+            m_esp->m_overruns += 1;
+            m_esp->set_rx_failed();
+            m_esp->m_interrupt_state.state = CommESPRX::RX_IDLE;
             break;
         }
         uint8_t *buf;
-        m_xbee->m_interrupt_state.handle = m_xbee->m_buffer.allocate(
+        m_esp->m_interrupt_state.handle = m_esp->m_buffer.allocate(
                     buf,
-                    m_xbee->m_interrupt_state.length+1
+                    m_esp->m_interrupt_state.length+1
                     );
-        if (m_xbee->m_interrupt_state.handle == buffer_t::INVALID_BUFFER) {
-            m_xbee->set_rx_failed();
-            m_xbee->m_overruns += 1;
-            m_xbee->m_interrupt_state.state = CommXBEERX::RX_IDLE;
+        if (m_esp->m_interrupt_state.handle == buffer_t::INVALID_BUFFER) {
+            m_esp->set_rx_failed();
+            m_esp->m_overruns += 1;
+            m_esp->m_interrupt_state.state = CommESPRX::RX_IDLE;
             break;
         }
 
-        m_xbee->m_usart.recv_a(buf, m_xbee->m_interrupt_state.length+1,
+        m_esp->m_usart.recv_a(buf, m_esp->m_interrupt_state.length+1,
                                rx_done_cb);
-        m_xbee->m_interrupt_state.spurious_rxneie = false;
+        m_esp->m_interrupt_state.spurious_rxneie = false;
 
-        m_xbee->m_interrupt_state.state = CommXBEERX::RX_DATA;
+        m_esp->m_interrupt_state.state = CommESPRX::RX_DATA;
         break;
     }
-    case CommXBEERX::RX_DATA:
+    case CommESPRX::RX_DATA:
     {
         /**
          * I’m a bit lost here. I’m not sure what to do and how this interrupt
@@ -236,23 +236,23 @@ void CommXBEERX::rx_data_cb(const uint8_t ch, const uint16_t sr)
          * which tracks spurious interrupts and only triggers the debug
          * condition if it happens twice.
          */
-        if (m_xbee->m_interrupt_state.spurious_rxneie) {
+        if (m_esp->m_interrupt_state.spurious_rxneie) {
             __asm__ volatile("bkpt #20"); // data cb called even though DMA should be going on
         } else {
-            m_xbee->m_interrupt_state.spurious_rxneie = true;
+            m_esp->m_interrupt_state.spurious_rxneie = true;
         }
         break;
     }
     }
 }
 
-ASYNC_CALLABLE CommXBEERX::step(const stm32_clock::time_point now)
+ASYNC_CALLABLE CommESPRX::step(const stm32_clock::time_point now)
 {
     COROUTINE_INIT;
-    if (m_xbee) {
+    if (m_esp) {
         __asm__ volatile("bkpt #20");
     }
-    m_xbee = this;
+    m_esp = this;
     m_usart.set_rx_callback(&rx_data_cb);
 
     while (1) {

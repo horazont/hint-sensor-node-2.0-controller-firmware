@@ -12,7 +12,7 @@
 #include "scheduler.h"
 #include "imu.h"
 #include "comm_sbx.h"
-#include "comm_xbee.h"
+#include "comm_esp.h"
 #include "usart.h"
 #include "lightsensor_freq.h"
 #include "onewire.h"
@@ -49,8 +49,8 @@ static const uint8_t lightsensor_ch_map[4] = {
 };
 
 
-using CommInterfaceTX = CommXBEETX;
-using CommInterfaceRX = CommXBEERX;
+using CommInterfaceTX = CommESPTX;
+using CommInterfaceRX = CommESPRX;
 
 
 class BlinkLED: public Coroutine
@@ -549,7 +549,7 @@ int main() {
 
     usart1.init(115200);
     usart2.init(115200);
-    usart3.init(115200, true); // enable support for CTS
+    usart3.init(115200);
     ls_freq_init();
     imu_timed_init();
     stm32_clock::init();
