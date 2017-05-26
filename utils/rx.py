@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 import array
 import contextlib
+import ipaddress
 import pathlib
 import serial
+import socket
 import struct
 
 import numpy as np
@@ -98,31 +100,7 @@ def decompress_single(packet):
     return data
 
 
-def read_api_frame(s):
-    while True:
-        ch = s.read(1)
-        while ch != b'\x7e':
-            ch = s.read(1)
-        length, = struct.unpack(">H", s.read(2))
-        if length > 0xff:
-            print("warning: packet with length > 0xff discarded")
-            # sounds unlikely
-            continue
-        payload = s.read(length)
-        recvd_checksum = s.read(1)[0]
-        break
-
-    calcd_checksum = 0xff - (sum(payload) & 0xff)
-
-    if calcd_checksum != recvd_checksum:
-        print(
-            "warning: checksum mismatch: 0x{:02x} != 0x{:02x}".format(
-                recvd_checksum,
-                calcd_checksum
-            )
-        )
-        return None
-
+def _decode_frame(length, payload):
     type_ = payload[0]
     if type_ == 0x8a:
         print("    < modem status =", "0x{:02x}".format(payload[1]))
@@ -146,6 +124,43 @@ def read_api_frame(s):
     else:
         print("warning: unknown API frame received: 0x{:02x}".format(type_))
         return None
+
+
+def read_api_frame(s):
+    while True:
+        ch = s.read(1)
+        if not ch:
+            raise EOFError()
+        while ch != b'\x7e':
+            ch = s.read(1)
+        length, = struct.unpack(">H", s.read(2))
+        if length > 0xff:
+            print("warning: packet with length > 0xff discarded")
+            # sounds unlikely
+            continue
+        payload = s.read(length)
+        recvd_checksum = s.read(1)[0]
+        break
+
+    calcd_checksum = 0xff - (sum(payload) & 0xff)
+
+    if calcd_checksum != recvd_checksum:
+        print(
+            "warning: checksum mismatch: 0x{:02x} != 0x{:02x}".format(
+                recvd_checksum,
+                calcd_checksum
+            )
+        )
+        return None
+
+    return _decode_frame(length, payload)
+
+
+def recv_frame(s):
+    buf = bytearray(1024)
+    size = s.recv_into(buf)
+    view = bytes(memoryview(buf)[:size])
+    return None, None, None, view
 
 
 class IMUStream:
@@ -254,7 +269,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "tty",
+        "source",
     )
     parser.add_argument(
         "outdir",
@@ -263,10 +278,23 @@ def main():
 
     args = parser.parse_args()
 
-    s = serial.Serial(
-        args.tty,
-        baudrate=115200,
-    )
+    try:
+        ipaddress.ip_address(args.source)
+    except ValueError:
+        if pathlib.Path(args.source).is_char_device():
+            s = serial.Serial(
+                args.source,
+                baudrate=115200,
+            )
+        else:
+            s = open(args.source, "rb")
+    else:
+        s = socket.socket(
+            socket.AF_INET,
+            socket.SOCK_DGRAM,
+        )
+        s.bind(("0.0.0.0", 7284))
+        s.connect((args.source, 7284))
 
     now = datetime.utcnow()
     imu_streams = [
@@ -297,7 +325,10 @@ def main():
             stack.enter_context(f)
 
         while True:
-            frame_info = read_api_frame(s)
+            if hasattr(s, "recv"):
+                frame_info = recv_frame(s)
+            else:
+                frame_info = read_api_frame(s)
             if frame_info is None:
                 continue
             _, _, _, payload = frame_info
