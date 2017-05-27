@@ -62,6 +62,11 @@ struct wraparound_timepoint_t
         return m_d == other.m_d;
     }
 
+    inline typename duration_t::rep raw() const
+    {
+        return m_d.count();
+    }
+
 private:
     explicit wraparound_timepoint_t(const duration &dur):
         m_d(dur)

@@ -16,6 +16,7 @@
 #include "usart.h"
 #include "lightsensor_freq.h"
 #include "onewire.h"
+#include "crc8.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
@@ -335,6 +336,96 @@ public:
 };
 
 
+class SampleOneWire: public Coroutine {
+public:
+    SampleOneWire(OnewireCore &core, CommInterfaceTX &tx):
+        m_core(core),
+        m_tx(tx),
+        m_crc(0x31)
+    {
+
+    }
+
+private:
+    OnewireCore &m_core;
+    CommInterfaceTX &m_tx;
+    onewire_addr_t m_addr;
+    uint8_t m_byte;
+    std::array<uint8_t, 9> m_scratchpad;
+    CRC8 m_crc;
+    stm32_clock::time_point m_last_wakeup;
+
+    CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
+    sbx_msg_t *m_buf;
+
+    stm32_clock::time_point m_timestamp;
+
+public:
+    void operator()() {
+        Coroutine::operator()();
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        while (1) {
+            m_last_wakeup = now;
+
+            await_call(m_core.detect_devices);
+            if (m_core.detect_devices.status() != ONEWIRE_PRESENCE) {
+                // no devices? -> sleep 10s
+                m_byte = 0xff;
+                await(usart2.send_c(&m_byte, 1));
+                await(sleep_c(10000, m_last_wakeup));
+                continue;
+            }
+
+            await_call(m_core.write_bytes, &ONEWIRE_SKIP_ROM, 1);
+            await_call(m_core.write_bytes, &ONEWIRE_CONVERT_T, 1);
+            m_timestamp = now;
+            await(sleep_c(1500, now));
+
+            memset(&m_addr, 0, sizeof(onewire_addr_t));
+            do {
+                await_call(m_core.find_next, m_addr);
+                if (m_core.find_next.status() == ONEWIRE_PRESENCE) {
+                    do {
+                        await(m_tx.buffer().any_buffer_free());
+                        m_handle = m_tx.buffer().allocate(
+                                    *(uint8_t**)&m_buf,
+                                    sizeof(sbx_msg_type) + sizeof(sbx_msg_ds18b20_t)
+                                    );
+                    } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
+
+                    memset(&m_scratchpad[0], 0, 9);
+                    await_call(m_core.write_bytes, &ONEWIRE_READ_SCRATCHPAD, 1);
+                    await_call(m_core.read_bytes, &m_scratchpad[0], 9);
+                    m_crc.reset();
+                    m_byte = m_crc.feed(&m_scratchpad[0], 9);
+                    if (m_byte != 0x00) {
+                        // CRC fail, skip sending the packet
+                        m_tx.buffer().release(m_handle);
+                        continue;
+                    }
+
+                    m_buf->type = sbx_msg_type::SENSOR_DS18B20;
+                    m_buf->payload.ds18b20.timestamp = m_timestamp.raw();
+                    memcpy(&m_buf->payload.ds18b20.id[0], &m_addr[0],
+                           ONEWIRE_ADDR_LEN);
+                    memcpy(&m_buf->payload.ds18b20.raw_value,
+                           &m_scratchpad[0], 2);
+                    m_tx.buffer().set_ready(m_handle);
+                }
+            } while (m_core.find_next.status() == ONEWIRE_PRESENCE);
+
+            await(sleep_c(10000, now));
+        }
+        COROUTINE_END;
+    }
+
+};
+
+
 class MiscTask: public Coroutine {
 public:
     MiscTask(CommInterfaceTX &tx):
@@ -391,6 +482,7 @@ public:
             }
             m_buf->payload.status.core_status.undervoltage_detected = 0;  // TODO
             m_tx.buffer().set_ready(m_handle);
+
             /*memset(&m_addr, 0, sizeof(onewire_addr_t));
             do {
                 await_call(m_find_next, m_addr);
@@ -417,7 +509,8 @@ static IMUSensorStream stream_my(commtx);
 static IMUSensorStream stream_mz(commtx);
 static SampleLightsensor sample_lightsensor(commtx);
 static MiscTask misc(commtx);
-static Scheduler<12> scheduler;
+static SampleOneWire sample_onewire(onewire, commtx);
+static Scheduler<13> scheduler;
 
 
 /*static void dump()
@@ -527,8 +620,8 @@ int main() {
     GPIOA->CRH = 0
             // TIM1_CH1, DHT recv
             | GPIO_CRH_CNF8_0
-            // USART1 TX
-            | GPIO_CRH_MODE9_1 | GPIO_CRH_CNF9_1
+            // USART1 TX (in open-drain mode)
+            | GPIO_CRH_MODE9_1 | GPIO_CRH_CNF9_1 | GPIO_CRH_CNF9_0
             // USART1 RX
             | GPIO_CRH_CNF10_0
             | GPIO_CRH_CNF11_0
@@ -685,6 +778,7 @@ int main() {
     scheduler.add_task(&stream_mz, IMU_SOURCE_MAGNETOMETER, 2);
     scheduler.add_task(&sample_lightsensor);
     scheduler.add_task(&misc);
+    scheduler.add_task(&sample_onewire);
 
     scheduler.run();
 

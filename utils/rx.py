@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import array
+import binascii
 import contextlib
 import ipaddress
 import pathlib
@@ -34,6 +35,16 @@ DHT11SensorSample = struct.Struct(
     "H"
     # relative humidity
     "H"
+    # temperature
+    "H"
+)
+
+DS18B20SensorSample = struct.Struct(
+    "<"
+    # time
+    "H"
+    # id
+    "8s"
     # temperature
     "H"
 )
@@ -217,6 +228,18 @@ def dump_dht11_packet(packet):
     ))
 
 
+def dump_ds18b20_packet(packet):
+    timestamp, id_, temperature = DS18B20SensorSample.unpack(
+        packet[:DS18B20SensorSample.size]
+    )
+
+    print("DS18B20 readout: t={}  id=0x{}  T={} °C".format(
+        timestamp,
+        binascii.b2a_hex(id_).decode(),
+        temperature/16,
+    ))
+
+
 def dump_status_packet(packet):
     (rtc, uptime,
      rx_overruns, rx_errors, rx_checksum_errors, rx_unknown_frames,
@@ -337,6 +360,8 @@ def main():
                 #stream_index = type_ - 0xf8
                 #imu_streams[stream_index].process(payload[1:])
                 print(type_)
+            elif type_ == 0xf1:
+                dump_ds18b20_packet(payload[1:])
             elif type_ == 0xf3:
                 dump_dht11_packet(payload[1:])
             elif type_ == 0xf4:
