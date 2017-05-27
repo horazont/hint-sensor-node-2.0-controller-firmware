@@ -56,6 +56,21 @@ struct COMM_PACKED sbx_msg_sensor_stream_t
     uint8_t data[0];
 };
 
+struct COMM_PACKED sbx_msg_ds18b20_sample_t
+{
+    /**
+     * DS18B20 sensor ID
+     */
+    uint8_t id[8];
+
+    /**
+     * Raw 16 bit sensor value
+     */
+    uint16_t raw_value;
+};
+
+#define SBX_MAX_DS18B20_SAMPLES ((MAX_FRAME_PAYLOAD_SIZE-(sizeof(sbx_uptime_t)+sizeof(sbx_msg_type)))/sizeof(struct sbx_msg_ds18b20_sample_t))
+
 struct COMM_PACKED sbx_msg_ds18b20_t
 {
     /**
@@ -66,15 +81,7 @@ struct COMM_PACKED sbx_msg_ds18b20_t
      */
     sbx_uptime_t timestamp;
 
-    /**
-     * DS18B20 sensor ID
-     */
-    uint8_t id[8];
-
-    /**
-     * Raw 16 bit sensor value
-     */
-    uint16_t raw_value;
+    sbx_msg_ds18b20_sample_t samples[SBX_MAX_DS18B20_SAMPLES];
 };
 
 struct COMM_PACKED sbx_msg_noise_t

@@ -358,7 +358,21 @@ private:
     CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
     sbx_msg_t *m_buf;
 
+    uint8_t m_sample_idx;
     stm32_clock::time_point m_timestamp;
+
+private:
+    void emit_buffer()
+    {
+        m_buf->type = sbx_msg_type::SENSOR_DS18B20;
+        m_buf->payload.ds18b20.timestamp = m_timestamp.raw();
+        m_tx.buffer().set_ready(
+                    m_handle,
+                    sizeof(sbx_msg_type) + sizeof(sbx_uptime_t) +
+                    sizeof(sbx_msg_ds18b20_sample_t)*m_sample_idx);
+        m_handle = CommInterfaceTX::buffer_t::INVALID_BUFFER;
+        m_sample_idx = 0;
+    }
 
 public:
     void operator()() {
@@ -386,16 +400,21 @@ public:
             await(sleep_c(1500, now));
 
             memset(&m_addr, 0, sizeof(onewire_addr_t));
+            m_handle = CommInterfaceTX::buffer_t::INVALID_BUFFER;
+
             do {
                 await_call(m_core.find_next, m_addr);
                 if (m_core.find_next.status() == ONEWIRE_PRESENCE) {
-                    do {
-                        await(m_tx.buffer().any_buffer_free());
-                        m_handle = m_tx.buffer().allocate(
-                                    *(uint8_t**)&m_buf,
-                                    sizeof(sbx_msg_type) + sizeof(sbx_msg_ds18b20_t)
-                                    );
-                    } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
+                    if (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER) {
+                        do {
+                            await(m_tx.buffer().any_buffer_free());
+                            m_handle = m_tx.buffer().allocate(
+                                        *(uint8_t**)&m_buf,
+                                        sizeof(sbx_msg_type) + sizeof(sbx_msg_ds18b20_t)
+                                        );
+                        } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
+                        m_sample_idx = 0;
+                    }
 
                     memset(&m_scratchpad[0], 0, 9);
                     await_call(m_core.write_bytes, &ONEWIRE_READ_SCRATCHPAD, 1);
@@ -404,21 +423,28 @@ public:
                     m_byte = m_crc.feed(&m_scratchpad[0], 9);
                     if (m_byte != 0x00) {
                         // CRC fail, skip sending the packet
-                        m_tx.buffer().release(m_handle);
                         continue;
                     }
-
-                    m_buf->type = sbx_msg_type::SENSOR_DS18B20;
-                    m_buf->payload.ds18b20.timestamp = m_timestamp.raw();
-                    memcpy(&m_buf->payload.ds18b20.id[0], &m_addr[0],
+                    memcpy(&m_buf->payload.ds18b20.samples[m_sample_idx].id[0], &m_addr[0],
                            ONEWIRE_ADDR_LEN);
-                    memcpy(&m_buf->payload.ds18b20.raw_value,
+                    memcpy(&m_buf->payload.ds18b20.samples[m_sample_idx].raw_value,
                            &m_scratchpad[0], 2);
-                    m_tx.buffer().set_ready(m_handle);
+                    m_sample_idx += 1;
+
+                    if (m_sample_idx == SBX_MAX_DS18B20_SAMPLES) {
+                        emit_buffer();
+                    }
                 }
             } while (m_core.find_next.status() == ONEWIRE_PRESENCE);
 
-            await(sleep_c(10000, now));
+            if (m_sample_idx > 0) {
+                emit_buffer();
+            } else if (m_handle != CommInterfaceTX::buffer_t::INVALID_BUFFER) {
+                m_tx.buffer().release(m_handle);
+                m_handle = CommInterfaceTX::buffer_t::INVALID_BUFFER;
+            }
+
+            await(sleep_c(10000, m_last_wakeup));
         }
         COROUTINE_END;
     }
@@ -649,6 +675,10 @@ int main() {
             // | GPIO_CRH_MODE10_1 | GPIO_CRH_CNF10_1
             // USART3 RX (original position, but we remapped it to PC11)
             // | GPIO_CRH_CNF11_0
+            // I2C2 SCL
+            | GPIO_CRH_MODE10_0 | GPIO_CRH_CNF10_1 | GPIO_CRH_CNF10_0
+            // I2C2 SDA
+            | GPIO_CRH_MODE11_0 | GPIO_CRH_CNF11_1 | GPIO_CRH_CNF11_0
             | GPIO_CRH_CNF12_0
             | GPIO_CRH_CNF13_0
             | GPIO_CRH_MODE14_1

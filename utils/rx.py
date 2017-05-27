@@ -39,10 +39,14 @@ DHT11SensorSample = struct.Struct(
     "H"
 )
 
-DS18B20SensorSample = struct.Struct(
+DS18B20Sensor = struct.Struct(
     "<"
     # time
     "H"
+)
+
+DS18B20SensorSample = struct.Struct(
+    "<"
     # id
     "8s"
     # temperature
@@ -229,15 +233,27 @@ def dump_dht11_packet(packet):
 
 
 def dump_ds18b20_packet(packet):
-    timestamp, id_, temperature = DS18B20SensorSample.unpack(
-        packet[:DS18B20SensorSample.size]
+    timestamp,  = DS18B20Sensor.unpack(
+        packet[:DS18B20Sensor.size]
     )
 
-    print("DS18B20 readout: t={}  id=0x{}  T={} °C".format(
-        timestamp,
-        binascii.b2a_hex(id_).decode(),
-        temperature/16,
-    ))
+    packet = packet[DS18B20Sensor.size:]
+
+    print("--- BEGIN DS18B20 PACKET ---")
+    print("time = {}".format(timestamp))
+
+    while packet:
+        id_, temperature = DS18B20SensorSample.unpack(
+            packet[:DS18B20SensorSample.size]
+        )
+        print("id=0x{}  T={} °C".format(
+            binascii.b2a_hex(id_).decode(),
+            temperature/16,
+        ))
+
+        packet = packet[DS18B20SensorSample.size:]
+
+    print("--- END DS18B20 PACKET ---")
 
 
 def dump_status_packet(packet):
