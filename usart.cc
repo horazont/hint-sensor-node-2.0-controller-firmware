@@ -18,46 +18,6 @@ USART::USART(USART_TypeDef *usart,
     m_tx_dma_irq(get_dma_irqn(tx_dma)),
     m_rx_dma_irq(get_dma_irqn(rx_dma))
 {
-    if (m_tx_dma) {
-        m_tx_dma->CCR = 0;
-        m_tx_dma->CCR = 0
-                // peripherial-to-memory mode
-                // high priority
-                | DMA_CCR1_PL_1
-                // byte memory size
-                // byte peripherial size
-                // enable memory increment mode
-                | DMA_CCR1_MINC
-                // disable peripherial increment mode
-                // disable circular mode
-                // read from memory
-                | DMA_CCR1_DIR
-                // enable full transfer and failed transfer interrupts
-                | DMA_CCR1_TCIE | DMA_CCR1_TEIE
-                // do not enable channel yet
-                ;
-
-        m_tx_dma->CPAR = (uint32_t)&usart->DR;
-    }
-    if (m_rx_dma) {
-        m_rx_dma->CCR = 0;
-        m_rx_dma->CCR = 0
-                // peripherial-to-memory mode
-                // high priority
-                | DMA_CCR1_PL_1
-                // byte memory size
-                // byte peripherial size
-                // enable memory increment mode
-                | DMA_CCR1_MINC
-                // disable peripherial increment mode
-                // disable circular mode
-                // read from peripherial
-                // enable full transfer and failed transfer interrupts
-                | DMA_CCR1_TCIE | DMA_CCR1_TEIE
-                // do not enable channel yet
-                ;
-        m_rx_dma->CPAR = (uint32_t)&usart->DR;
-    }
 }
 
 IRQn_Type USART::get_irqn(USART_TypeDef *usart)
@@ -97,6 +57,46 @@ IRQn_Type USART::get_dma_irqn(DMA_Channel_TypeDef *dmach)
 
 void USART::init(uint32_t baudrate, bool use_cts, bool use_rts)
 {
+    if (m_tx_dma) {
+        m_tx_dma->CCR = 0
+                // peripherial-to-memory mode
+                // high priority
+                | DMA_CCR1_PL_1
+                // byte memory size
+                // byte peripherial size
+                // enable memory increment mode
+                | DMA_CCR1_MINC
+                // disable peripherial increment mode
+                // disable circular mode
+                // read from memory
+                | DMA_CCR1_DIR
+                // enable full transfer and failed transfer interrupts
+                | DMA_CCR1_TCIE | DMA_CCR1_TEIE
+                // do not enable channel yet
+                ;
+
+        m_tx_dma->CPAR = (uint32_t)&m_usart->DR;
+    }
+
+    if (m_rx_dma) {
+        m_rx_dma->CCR = 0
+                // peripherial-to-memory mode
+                // high priority
+                | DMA_CCR1_PL_1
+                // byte memory size
+                // byte peripherial size
+                // enable memory increment mode
+                | DMA_CCR1_MINC
+                // disable peripherial increment mode
+                // disable circular mode
+                // read from peripherial
+                // enable full transfer and failed transfer interrupts
+                | DMA_CCR1_TCIE | DMA_CCR1_TEIE
+                // do not enable channel yet
+                ;
+        m_rx_dma->CPAR = (uint32_t)&m_usart->DR;
+    }
+
     // disable everything first
     m_usart->CR1 = 0;
     m_usart->CR2 = 0;

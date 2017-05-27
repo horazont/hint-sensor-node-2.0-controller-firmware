@@ -453,15 +453,6 @@ int main() {
 
     RCC->APB1RSTR |= RCC_APB1RSTR_TIM3RST | RCC_APB1RSTR_TIM2RST | RCC_APB1RSTR_TIM4RST | RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_USART2RST | RCC_APB1RSTR_USART3RST;
     RCC->APB2RSTR |= RCC_APB2RSTR_IOPARST | RCC_APB2RSTR_IOPBRST | RCC_APB2RSTR_IOPCRST | RCC_APB2RSTR_IOPDRST | RCC_APB2RSTR_IOPERST | RCC_APB2RSTR_TIM1RST | RCC_APB2RSTR_USART1RST | RCC_APB2RSTR_ADC1RST;
-    DMA1->IFCR = 0xfffffff;  // clear all the interrupt flags
-
-    // give it a moment to reset
-    for (uint32_t i = 0; i < 1000; ++i) {
-        __asm__ volatile("nop");
-    }
-
-    RCC->APB1RSTR = 0;
-    RCC->APB2RSTR = 0;
 
     RCC->APB2ENR = 0
             | RCC_APB2ENR_IOPAEN
@@ -487,6 +478,34 @@ int main() {
             | RCC_AHBENR_FLITFEN
             | RCC_AHBENR_SRAMEN
             | RCC_AHBENR_DMA1EN;
+
+    // give it a moment to reset
+    for (uint32_t i = 0; i < 1000; ++i) {
+        __asm__ volatile("nop");
+    }
+
+    RCC->APB1RSTR = 0;
+    RCC->APB2RSTR = 0;
+
+    // give it a moment to power the peripherials up
+    for (uint32_t i = 0; i < 1000; ++i) {
+        __asm__ volatile("nop");
+    }
+
+    DMA1->IFCR = 0xfffffff;  // clear all the interrupt flags
+    // manually reset all the DMAs
+    DMA1_Channel1->CCR = 0;
+    DMA1_Channel2->CCR = 0;
+    DMA1_Channel3->CCR = 0;
+    DMA1_Channel4->CCR = 0;
+    DMA1_Channel5->CCR = 0;
+    DMA1_Channel6->CCR = 0;
+    DMA1_Channel7->CCR = 0;
+
+    // and another moment to complete the DMA reset
+    for (uint32_t i = 0; i < 1000; ++i) {
+        __asm__ volatile("nop");
+    }
 
 
     // Remap USART3 RX/TX to other pins
