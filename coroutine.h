@@ -96,6 +96,8 @@ class Coroutine
 {
 public:
     Coroutine();
+    Coroutine(const Coroutine &ref) = delete;
+    Coroutine(Coroutine &&src) = delete;
     virtual ~Coroutine();
 
 protected:
