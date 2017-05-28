@@ -152,6 +152,7 @@ void CommESPRX::set_rx_failed()
     if (m_esp->m_interrupt_state.handle != buffer_t::INVALID_BUFFER) {
         m_esp->m_buffer.release(m_esp->m_interrupt_state.handle);
     }
+    m_esp->m_interrupt_state.handle = buffer_t::INVALID_BUFFER;
     m_esp->m_interrupt_state.state = CommESPRX::RX_IDLE;
 }
 

@@ -337,16 +337,14 @@ public:
 
 class MiscTask: public Coroutine {
 public:
-    MiscTask(CommInterfaceTX &tx, CommInterfaceRX &rx):
-        m_tx(tx),
-        m_rx(rx)
+    MiscTask(CommInterfaceTX &tx):
+        m_tx(tx)
     {
 
     }
 
 private:
     CommInterfaceTX &m_tx;
-    CommInterfaceRX &m_rx;
     sched_clock::time_point m_last_wakeup;
     CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
     sbx_msg_t *m_buf;
@@ -370,20 +368,20 @@ public:
             m_buf->type = sbx_msg_type::STATUS;
             m_buf->payload.status.rtc = stm32_rtc::now_raw();
             m_buf->payload.status.uptime = sched_clock::now_raw();
-            m_buf->payload.status.xbee_status.rx_errors = m_rx.errors();
+            /*m_buf->payload.status.xbee_status.rx_errors = m_rx.errors();
             m_buf->payload.status.xbee_status.rx_overruns = m_rx.overruns();
             m_buf->payload.status.xbee_status.rx_checksum_errors = m_rx.checksum_errors();
             m_buf->payload.status.xbee_status.rx_unknown_frames = m_rx.unknown_frames();
-            m_buf->payload.status.xbee_status.rx_skipped_bytes = m_rx.skipped_bytes();
-            {
+            m_buf->payload.status.xbee_status.rx_skipped_bytes = m_rx.skipped_bytes();*/
+            /*{
                 uint16_t most_allocated;
                 m_rx.buffer().fetch_stats_and_reset(
                             most_allocated
                             );
                 m_buf->payload.status.xbee_status.rx_buffer_most_allocated = most_allocated;
-            }
-            m_buf->payload.status.xbee_status.tx_lost = m_rx.tx_lost();
-            m_buf->payload.status.xbee_status.tx_retries = m_rx.tx_retries();
+            }*/
+            //m_buf->payload.status.xbee_status.tx_lost = m_rx.tx_lost();
+            //m_buf->payload.status.xbee_status.tx_retries = m_rx.tx_retries();
             {
                 uint16_t most_allocated;
                 m_tx.buffer().fetch_stats_and_reset(
@@ -398,6 +396,8 @@ public:
                 await_call(m_find_next, m_addr);
                 await(usart2.send_c(&m_addr[0], sizeof(onewire_addr_t)));
             } while (m_find_next.status() == ONEWIRE_PRESENCE);*/
+
+
             await(sleep_c(10000, m_last_wakeup));
         }
         COROUTINE_END;
@@ -408,7 +408,7 @@ public:
 static BlinkLED blink;
 static OnewireCore onewire(usart1);
 static CommInterfaceTX commtx(usart3);
-static CommInterfaceRX commrx(usart3);
+// static CommInterfaceRX commrx(usart3);
 static IMUSensorStream stream_ax(commtx);
 static IMUSensorStream stream_ay(commtx);
 static IMUSensorStream stream_az(commtx);
@@ -416,7 +416,7 @@ static IMUSensorStream stream_mx(commtx);
 static IMUSensorStream stream_my(commtx);
 static IMUSensorStream stream_mz(commtx);
 static SampleLightsensor sample_lightsensor(commtx);
-static MiscTask misc(commtx, commrx);
+static MiscTask misc(commtx);
 static Scheduler<12> scheduler;
 
 
@@ -656,7 +656,7 @@ int main() {
     // stm32_rtc::enable();
 
     scheduler.add_task(&commtx);
-    scheduler.add_task(&commrx);
+    // scheduler.add_task(&commrx);
     scheduler.add_task(&blink);
     scheduler.add_task(&stream_ax, IMU_SOURCE_ACCELEROMETER, 0);
     scheduler.add_task(&stream_ay, IMU_SOURCE_ACCELEROMETER, 1);
