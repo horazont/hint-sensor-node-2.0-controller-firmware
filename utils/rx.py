@@ -53,6 +53,18 @@ DS18B20SensorSample = struct.Struct(
     "H"
 )
 
+NoiseSensor = struct.Struct(
+    "<"
+    # time
+    "H"
+)
+
+NoiseSensorSample = struct.Struct(
+    "<"
+    # value
+    "H"
+)
+
 StatusPacket = struct.Struct(
     "<"
     # rtc time
@@ -256,6 +268,26 @@ def dump_ds18b20_packet(packet):
     print("--- END DS18B20 PACKET ---")
 
 
+def dump_noise_packet(packet):
+    timestamp,  = NoiseSensor.unpack(
+        packet[:NoiseSensor.size]
+    )
+
+    packet = packet[NoiseSensor.size:]
+
+    values = [
+        NoiseSensorSample.unpack(
+            packet[i*NoiseSensorSample.size:(i+1)*NoiseSensorSample.size]
+        )[0]
+        for i in range(len(packet)//NoiseSensorSample.size)
+    ]
+
+    print("noise (t_last={}): {}".format(
+        timestamp,
+        ", ".join("{:.1f}%".format((v/2**12)*100) for v in values)
+    ))
+
+
 def dump_status_packet(packet):
     (rtc, uptime,
      rx_overruns, rx_errors, rx_checksum_errors, rx_unknown_frames,
@@ -378,6 +410,8 @@ def main():
                 print(type_)
             elif type_ == 0xf1:
                 dump_ds18b20_packet(payload[1:])
+            elif type_ == 0xf2:
+                dump_noise_packet(payload[1:])
             elif type_ == 0xf3:
                 dump_dht11_packet(payload[1:])
             elif type_ == 0xf4:

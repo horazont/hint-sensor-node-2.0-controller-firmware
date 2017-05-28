@@ -17,6 +17,7 @@
 #include "lightsensor_freq.h"
 #include "onewire.h"
 #include "crc8.h"
+#include "adc.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
@@ -523,6 +524,59 @@ public:
 };
 
 
+class SampleADC: public Coroutine
+{
+public:
+    explicit SampleADC(CommInterfaceTX &tx):
+        m_tx(tx)
+    {
+
+    }
+
+private:
+    CommInterfaceTX &m_tx;
+    CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
+    sbx_msg_t *m_buf;
+    sched_clock::time_point m_last_wakeup;
+    uint8_t m_sample;
+
+public:
+    void operator()()
+    {
+
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        while (1) {
+            do {
+                await(m_tx.buffer().any_buffer_free());
+                m_handle = m_tx.buffer().allocate(
+                            *(uint8_t**)&m_buf,
+                            sizeof(sbx_msg_type) + sizeof(sbx_msg_noise_t)
+                            );
+            } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
+
+            m_last_wakeup = now;
+
+            for (m_sample = 0; m_sample < SBX_NOISE_SAMPLES; m_sample++) {
+                await(sleep_c(1000, m_last_wakeup));
+                m_last_wakeup = now;
+                await(adc_sample(4, m_buf->payload.noise.samples[m_sample]));
+            }
+
+            m_buf->type = sbx_msg_type::SENSOR_NOISE;
+            m_buf->payload.noise.timestamp = now.raw();
+
+            m_tx.buffer().set_ready(m_handle);
+        }
+        COROUTINE_END;
+    }
+
+};
+
+
 static BlinkLED blink;
 static OnewireCore onewire(usart1);
 static CommInterfaceTX commtx(usart3);
@@ -536,6 +590,7 @@ static IMUSensorStream stream_mz(commtx);
 static SampleLightsensor sample_lightsensor(commtx);
 static MiscTask misc(commtx);
 static SampleOneWire sample_onewire(onewire, commtx);
+static SampleADC sample_adc(commtx);
 static Scheduler<13> scheduler;
 
 
@@ -710,6 +765,7 @@ int main() {
     stm32_clock::init();
     // stm32_rtc::init();
     i2c_init();
+    adc_init();
 
     i2c_enable();
     i2c_workaround_reset();
@@ -722,6 +778,7 @@ int main() {
         0x40,
         //0x00,
     };
+
     /*static const uint8_t config_24[] = {
         // at 0x24
         // temperature sensor enabled  |  high resolution  |  data rate = 3.125 Hz
@@ -742,8 +799,16 @@ int main() {
         0x00
     };
 
-    i2c_smbus_write(0x1d, 0x20, 2, &config_20[0]);
-    i2c_smbus_write(0x1d, 0x24, 3, &config_24[0]);
+    i2c1.smbus_write(0x1d, 0x20, 2, &config_20[0]);
+    i2c1.smbus_write(0x1d, 0x24, 3, &config_24[0]);
+
+    usart1.enable();
+    usart2.enable();
+    usart3.enable();
+    adc_enable();
+    ls_freq_enable();
+    imu_timed_enable();
+    stm32_clock::enable();
 
     /*ADC1->CR1 = 0;
     ADC1->CR2 = ADC_CR2_TSVREFE;
@@ -787,14 +852,6 @@ int main() {
             __asm__ volatile("nop");
         }
     }*/
-
-
-    usart1.enable();
-    usart2.enable();
-    usart3.enable();
-    ls_freq_enable();
-    imu_timed_enable();
-    stm32_clock::enable();
     // stm32_rtc::enable();
 
     scheduler.add_task(&commtx);
@@ -809,6 +866,7 @@ int main() {
     scheduler.add_task(&sample_lightsensor);
     scheduler.add_task(&misc);
     scheduler.add_task(&sample_onewire);
+    scheduler.add_task(&sample_adc);
 
     scheduler.run();
 
