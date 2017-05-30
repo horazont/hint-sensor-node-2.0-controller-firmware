@@ -79,6 +79,12 @@ StatusPacket = struct.Struct(
     "B"
 )
 
+RecordedFrameHeader = struct.Struct(
+    ">"
+    # length
+    "H"
+)
+
 
 def decompress_single(packet):
     median, = struct.unpack("<h", packet[:2])
@@ -188,6 +194,21 @@ def recv_frame(s):
     size = s.recv_into(buf)
     view = bytes(memoryview(buf)[:size])
     return None, None, None, view
+
+
+def readexactly(f, size):
+    read = f.read(size)
+    if len(read) < size:
+        raise EOFError()
+    return read
+
+
+def read_recording(s):
+    size, = RecordedFrameHeader.unpack(
+        readexactly(s, RecordedFrameHeader.size)
+    )
+    packet = readexactly(s, size)
+    return None, None, None, packet
 
 
 class IMUStream:
@@ -340,6 +361,11 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--format",
+        choices=("api", "recording", "frames"),
+        default=None,
+    )
+    parser.add_argument(
         "source",
     )
     parser.add_argument(
@@ -357,8 +383,10 @@ def main():
                 args.source,
                 baudrate=115200,
             )
+            args.format = args.format or "api"
         else:
             s = open(args.source, "rb")
+            args.format = args.format or "recording"
     else:
         s = socket.socket(
             socket.AF_INET,
@@ -366,6 +394,13 @@ def main():
         )
         s.bind(("0.0.0.0", 7284))
         s.connect((args.source, 7284))
+        args.format = args.format or "frames"
+
+    decoder = {
+        "api": read_api_frame,
+        "frames": recv_frame,
+        "recording": read_recording,
+    }[args.format]
 
     now = datetime.utcnow()
     imu_streams = [
@@ -396,18 +431,14 @@ def main():
             stack.enter_context(f)
 
         while True:
-            if hasattr(s, "recv"):
-                frame_info = recv_frame(s)
-            else:
-                frame_info = read_api_frame(s)
+            frame_info = decoder(s)
             if frame_info is None:
                 continue
             _, _, _, payload = frame_info
             type_ = payload[0]
             if 0xf8 <= type_ <= 0xfd:
-                #stream_index = type_ - 0xf8
-                #imu_streams[stream_index].process(payload[1:])
-                print(type_)
+                stream_index = type_ - 0xf8
+                imu_streams[stream_index].process(payload[1:])
             elif type_ == 0xf1:
                 dump_ds18b20_packet(payload[1:])
             elif type_ == 0xf2:
