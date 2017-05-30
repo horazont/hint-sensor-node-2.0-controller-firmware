@@ -14,20 +14,20 @@ LFLAGS  = -Tstm32_flash.ld -nostartfiles -Wl,--gc-sections -L/usr/lib/arm-none-e
 CPFLAGS = -Obinary
 ODFLAGS = -S
 
-c_sources = $(wildcard *.c)
-cxx_sources = $(filter-out comm_xbee.cc,$(wildcard *.cc))
-headers = $(wildcard *.h)
+c_sources = $(wildcard src/*.c)
+cxx_sources = $(filter-out comm_xbee.cc,$(wildcard src/*.cc))
+headers = $(wildcard include/sbx/*.h)
 obj_dir = .objs/
-c_objs = $(patsubst %.c,$(obj_dir)%.o,$(c_sources))
-cxx_objs = $(patsubst %.cc,$(obj_dir)%.o,$(cxx_sources))
+c_objs = $(patsubst src/%.c,$(obj_dir)%.o,$(c_sources))
+cxx_objs = $(patsubst src/%.cc,$(obj_dir)%.o,$(cxx_sources))
 objs = $(c_objs) $(cxx_objs)
 
-startup_file_src = startup_stm32f10x_md.s
-startup_file_obj = $(patsubst %.s,$(obj_dir)%.o,$(startup_file_src))
+startup_file_src = src/startup_stm32f10x_md.s
+startup_file_obj = $(patsubst src/%.s,$(obj_dir)%.o,$(startup_file_src))
 
 all: test
 
-CFLAGS +=  -Wall -Wextra -Werror -I./ -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles -fwrapv -static
+CFLAGS +=  -Wall -Wextra -Werror -I./include/sbx/ -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles -fwrapv -static
 
 include $(STM32SPL)/ST_STM32StdPeriph.mk
 
@@ -54,19 +54,19 @@ main.elf: $(objs) $(startup_file_obj) stm32_flash.ld $(SPL_LIB) $(system_obj)
 # main.elf: $(objs) $(startup_file_obj) stm32_flash.ld $(SPL_LIB) $(system_obj)
 # 	$(CC) $(CFLAGS) -Wl,-v -Wl,-Tstm32_flash.ld -L/usr/lib/arm-none-eabi/newlib/libc.a -Wl,-nostartfiles -Wl,--gc-sections -o main.elf $(startup_file_obj) $(objs) $(SPL_LIB) $(system_obj)
 
-$(c_objs): $(obj_dir)%.o: %.c $(headers)
+$(c_objs): $(obj_dir)%.o: src/%.c $(headers)
 ifdef obj_dir
 	@mkdir -p $(obj_dir)
 endif
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(cxx_objs): $(obj_dir)%.o: %.cc $(headers)
+$(cxx_objs): $(obj_dir)%.o: src/%.cc $(headers)
 ifdef obj_dir
 	@mkdir -p $(obj_dir)
 endif
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(startup_file_obj): $(obj_dir)%.o: %.s
+$(startup_file_obj): $(obj_dir)%.o: src/%.s
 ifdef obj_dir
 	@mkdir -p $(obj_dir)
 endif
