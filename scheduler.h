@@ -96,7 +96,11 @@ public:
                 if (!task.can_run_now(now)) {
                     continue;
                 }
-                task.condition = task.coro->step(now);
+                sched_clock::time_point wakeup_timestamp = now;
+                if (task.condition.type == WakeupCondition::TIMER) {
+                    wakeup_timestamp = task.condition.wakeup_at;
+                }
+                task.condition = task.coro->step(wakeup_timestamp);
             }
 
             if (sched_no_event_pending.test_and_set()) {

@@ -397,7 +397,7 @@ public:
 
             await_call(m_core.write_bytes, &ONEWIRE_SKIP_ROM, 1);
             await_call(m_core.write_bytes, &ONEWIRE_CONVERT_T, 1);
-            m_timestamp = now;
+            m_timestamp = sched_clock::now();
             await(sleep_c(1500, now));
 
             memset(&m_addr, 0, sizeof(onewire_addr_t));
@@ -549,6 +549,7 @@ public:
     COROUTINE_DECL
     {
         COROUTINE_INIT;
+        m_last_wakeup = now;
         while (1) {
             do {
                 await(m_tx.buffer().any_buffer_free());
@@ -558,8 +559,6 @@ public:
                             );
             } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
 
-            m_last_wakeup = now;
-
             for (m_sample = 0; m_sample < SBX_NOISE_SAMPLES; m_sample++) {
                 await(sleep_c(1000, m_last_wakeup));
                 m_last_wakeup = now;
@@ -567,7 +566,7 @@ public:
             }
 
             m_buf->type = sbx_msg_type::SENSOR_NOISE;
-            m_buf->payload.noise.timestamp = now.raw();
+            m_buf->payload.noise.timestamp = sched_clock::now_raw();
 
             m_tx.buffer().set_ready(m_handle);
         }
