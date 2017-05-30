@@ -36,6 +36,8 @@ CFLAGS := -std=c11 $(CFLAGS)
 
 system_obj = $($(PFX)_PFP)obj/CMSIS/Device/ST/STM32F10x/Source/system_stm32f10x.o
 
+all: main.elf
+
 clean: vendor_st_stm32_stdperiph_clean
 	rm -rf main.lst main.elf main.lst main.bin .objs
 
