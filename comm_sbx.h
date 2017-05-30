@@ -134,18 +134,30 @@ struct COMM_PACKED sbx_msg_status_t
 {
     sbx_rtc_t rtc;
     sbx_uptime_t uptime;
-    struct COMM_PACKED {
-        uint16_t rx_errors;
-        uint16_t rx_overruns;
-        uint16_t rx_checksum_errors;
-        uint16_t rx_unknown_frames;
-        uint16_t rx_skipped_bytes;
-        uint16_t rx_buffer_most_allocated;
-        uint16_t tx_lost;
-        uint16_t tx_retries;
-        uint16_t tx_buffer_most_allocated;
-    } xbee_status;
-    struct COMM_PACKED {
+
+    /**
+     * Core protocol version number.
+     */
+    uint8_t protocol_version;
+
+    /**
+     * Status version number.
+     */
+    uint8_t status_version;
+
+    struct {
+        /**
+         * Current sequence numbers for the Accelerometer and Magnetometer sensor
+         * streams.
+         */
+        struct {
+            uint16_t sequence_number;
+            uint16_t timestamp;
+            uint16_t period;
+        } stream_state[2];
+    } imu;
+
+    struct {
         uint8_t undervoltage_detected;
     } core_status;
 };

@@ -20,6 +20,7 @@ struct imu_source_data_t
     volatile uint8_t current_buffer;
     uint8_t offset;
     uint16_t sample_seq;
+    sched_clock::time_point last_sample;
 
     imu_buffer_t &buffer()
     {
@@ -81,6 +82,17 @@ ASYNC_CALLABLE imu_timed_full_buffer(
     return sources[source].wait_for_buffer(full_buffer);
 }
 
+void imu_timed_get_state(imu_source_t source_type,
+                         uint16_t &last_seq,
+                         uint16_t &last_timestamp)
+{
+    imu_source_data_t &source = sources[source_type];
+    // XXX: this is a read-race
+    last_seq = source.sample_seq;
+    last_timestamp = source.last_sample.raw();
+}
+
+
 
 static inline void _sample_accelerometer()
 {
@@ -96,6 +108,7 @@ static inline void _sample_accelerometer()
                       3*sizeof(uint16_t),
                       (uint8_t*)&buffer.samples[source.offset++].vector[0]);
 
+    source.last_sample = sched_clock::now();
     source.sample_seq += 1;
 }
 
@@ -114,6 +127,7 @@ static inline void _sample_magnetometer()
                       3*sizeof(uint16_t),
                       (uint8_t*)&buffer.samples[source.offset++].vector[0]);
 
+    source.last_sample = sched_clock::now();
     source.sample_seq += 1;
 }
 

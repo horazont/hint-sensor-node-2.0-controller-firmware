@@ -39,6 +39,10 @@ ASYNC_CALLABLE imu_timed_full_buffer(
         const imu_buffer_t *&full_buffer,
         const imu_source_t source);
 
+void imu_timed_get_state(imu_source_t source_type,
+                         uint16_t &last_seq,
+                         uint16_t &last_timestamp);
+
 #ifdef __cplusplus
 extern "C" {
 #endif

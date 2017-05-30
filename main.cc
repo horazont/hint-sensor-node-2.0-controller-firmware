@@ -486,36 +486,20 @@ public:
             m_buf->type = sbx_msg_type::STATUS;
             m_buf->payload.status.rtc = stm32_rtc::now_raw();
             m_buf->payload.status.uptime = sched_clock::now_raw();
-            /*m_buf->payload.status.xbee_status.rx_errors = m_rx.errors();
-            m_buf->payload.status.xbee_status.rx_overruns = m_rx.overruns();
-            m_buf->payload.status.xbee_status.rx_checksum_errors = m_rx.checksum_errors();
-            m_buf->payload.status.xbee_status.rx_unknown_frames = m_rx.unknown_frames();
-            m_buf->payload.status.xbee_status.rx_skipped_bytes = m_rx.skipped_bytes();*/
-            /*{
-                uint16_t most_allocated;
-                m_rx.buffer().fetch_stats_and_reset(
-                            most_allocated
-                            );
-                m_buf->payload.status.xbee_status.rx_buffer_most_allocated = most_allocated;
-            }*/
-            //m_buf->payload.status.xbee_status.tx_lost = m_rx.tx_lost();
-            //m_buf->payload.status.xbee_status.tx_retries = m_rx.tx_retries();
-            {
-                uint16_t most_allocated;
-                m_tx.buffer().fetch_stats_and_reset(
-                            most_allocated
-                            );
-                m_buf->payload.status.xbee_status.tx_buffer_most_allocated = most_allocated;
-            }
+            m_buf->payload.status.protocol_version = 0x01;
+            m_buf->payload.status.status_version = 0x01;
+            imu_timed_get_state(
+                        IMU_SOURCE_ACCELEROMETER,
+                        m_buf->payload.status.imu.stream_state[0].sequence_number,
+                        m_buf->payload.status.imu.stream_state[0].timestamp);
+            imu_timed_get_state(
+                        IMU_SOURCE_MAGNETOMETER,
+                        m_buf->payload.status.imu.stream_state[1].sequence_number,
+                        m_buf->payload.status.imu.stream_state[1].timestamp);
+            m_buf->payload.status.imu.stream_state[0].period = 5;
+            m_buf->payload.status.imu.stream_state[1].period = 64*5;
             m_buf->payload.status.core_status.undervoltage_detected = 0;  // TODO
             m_tx.buffer().set_ready(m_handle);
-
-            /*memset(&m_addr, 0, sizeof(onewire_addr_t));
-            do {
-                await_call(m_find_next, m_addr);
-                await(usart2.send_c(&m_addr[0], sizeof(onewire_addr_t)));
-            } while (m_find_next.status() == ONEWIRE_PRESENCE);*/
-
 
             await(sleep_c(10000, m_last_wakeup));
         }
