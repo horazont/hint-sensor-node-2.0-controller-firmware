@@ -54,6 +54,35 @@ static constexpr uint8_t IMU_DEVICE_ADDRESS = 0x1d;
 static constexpr uint8_t IMU_ACCEL_ADDRESS = 0x28;
 static constexpr uint8_t IMU_COMPASS_ADDRESS = 0x08;
 
+static const uint8_t config_20[] = {
+    // at 0x20
+    // data rate = 200 Hz  |  block data update  |  enable all three axis
+    0x70 | 0x08 | 0x07,
+    // anti-alias filter = 194 Hz
+    0x40,
+    //0x00,
+};
+
+static const uint8_t config_24[] = {
+    0xf4,
+    0x00,
+    0x00
+};
+
+/*static const uint8_t config_24[] = {
+    // at 0x24
+    // temperature sensor enabled  |  high resolution  |  data rate = 3.125 Hz
+    0x80 | 0x60,
+    // full scale = ±2 gauss
+    0x00,
+    0x00,
+};*/
+
+/*static const uint8_t config_20[] = {
+    0x67,
+    0x00
+};*/
+
 void imu_timed_init()
 {
     ctr = 0;
@@ -68,6 +97,13 @@ void imu_timed_init()
     // those fucking timer clocks are doubled!
     TIM4->ARR = 180;
 }
+
+void imu_timed_configure(I2C &i2c)
+{
+    i2c.smbus_write(IMU_DEVICE_ADDRESS, 0x20, 2, &config_20[0]);
+    i2c.smbus_write(IMU_DEVICE_ADDRESS, 0x24, 3, &config_24[0]);
+}
+
 
 void imu_timed_enable()
 {

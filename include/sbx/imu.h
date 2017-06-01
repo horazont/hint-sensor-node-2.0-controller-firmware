@@ -13,6 +13,7 @@
 #include <cstdint>
 
 #include "coroutine.h"
+#include "i2clib.h"
 
 struct __attribute__((packed)) imu_data_point_t
 {
@@ -33,6 +34,7 @@ enum imu_source_t: uint8_t {
 };
 
 void imu_timed_init();
+void imu_timed_configure(I2C &i2c);
 void imu_timed_enable();
 
 ASYNC_CALLABLE imu_timed_full_buffer(

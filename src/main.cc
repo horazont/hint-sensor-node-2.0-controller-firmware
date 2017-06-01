@@ -760,37 +760,7 @@ int main() {
     i2c1.enable();
     i2c1_workaround_reset();
 
-    static const uint8_t config_20[] = {
-        // at 0x20
-        // data rate = 200 Hz  |  block data update  |  enable all three axis
-        0x70 | 0x08 | 0x07,
-        // anti-alias filter = 194 Hz
-        0x40,
-        //0x00,
-    };
-
-    /*static const uint8_t config_24[] = {
-        // at 0x24
-        // temperature sensor enabled  |  high resolution  |  data rate = 3.125 Hz
-        0x80 | 0x60,
-        // full scale = ±2 gauss
-        0x00,
-        0x00,
-    };*/
-
-    /*static const uint8_t config_20[] = {
-        0x67,
-        0x00
-    };*/
-
-    static const uint8_t config_24[] = {
-        0xf4,
-        0x00,
-        0x00
-    };
-
-    i2c1.smbus_write(0x1d, 0x20, 2, &config_20[0]);
-    i2c1.smbus_write(0x1d, 0x24, 3, &config_24[0]);
+    imu_timed_configure(i2c1);
 
     usart1.enable();
     usart2.enable();
