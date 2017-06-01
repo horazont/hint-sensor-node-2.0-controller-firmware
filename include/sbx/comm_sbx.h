@@ -1,21 +1,37 @@
 #ifndef COMM_SBX_H
 #define COMM_SBX_H
 
-#include <cstdint>
+#include <stdint.h>
 
 #ifdef XBEE_USE_ENCRYPTION
-static constexpr std::size_t MAX_FRAME_PAYLOAD_SIZE = 66;
+#define MAX_FRAME_PAYLOAD_SIZE (66)
 #else
-static constexpr std::size_t MAX_FRAME_PAYLOAD_SIZE = 128;
+#define MAX_FRAME_PAYLOAD_SIZE (128)
 #endif
 
 #define SBX_LIGHT_SENSOR_SAMPLES (6)
 #define SBX_LIGHT_SENSOR_CHANNELS (4)
 
 #define COMM_PACKED __attribute__((packed))
+#define CFFI_DOTDOTDOT
+#define CFFI_DOTDOTDOT_or(x) x
 
-enum class sbx_msg_type: std::uint8_t
-{
+#ifdef __cplusplus
+#define NOT_IN_C(x) x
+#define ONLY_IN_C(x)
+#define COMM_ENUM_PACKED
+#else
+#define NOT_IN_C(x)
+#define ONLY_IN_C(x) x
+#define COMM_ENUM_PACKED COMM_PACKED
+#endif
+
+// I hate myself for doing this. But it helps CFFI.
+#ifdef __cplusplus
+#define enum enum class
+#endif
+
+enum COMM_ENUM_PACKED sbx_msg_type NOT_IN_C(:std::uint8_t) {
     PING = 0x01,
 
     HELLO = 0x80,
@@ -34,9 +50,15 @@ enum class sbx_msg_type: std::uint8_t
     RESERVED = 0xff,
 };
 
+#ifdef __cplusplus
+#undef enum
+#else
+#define sbx_msg_type uint8_t
+#endif
 
-typedef std::uint16_t sbx_uptime_t;
-typedef std::uint32_t sbx_rtc_t;
+
+typedef uint16_t sbx_uptime_t;
+typedef uint32_t sbx_rtc_t;
 
 struct COMM_PACKED sbx_msg_sensor_stream_t
 {
@@ -72,8 +94,7 @@ struct COMM_PACKED sbx_msg_ds18b20_sample_t
 #define SBX_MAX_DS18B20_SAMPLES ((MAX_FRAME_PAYLOAD_SIZE-(sizeof(sbx_uptime_t)+sizeof(sbx_msg_type)))/sizeof(struct sbx_msg_ds18b20_sample_t))
 #define SBX_NOISE_SAMPLES (32)
 
-struct COMM_PACKED sbx_msg_ds18b20_t
-{
+struct COMM_PACKED sbx_msg_ds18b20_t {
     /**
      * Milliseconds since boot.
      *
@@ -82,11 +103,11 @@ struct COMM_PACKED sbx_msg_ds18b20_t
      */
     sbx_uptime_t timestamp;
 
-    sbx_msg_ds18b20_sample_t samples[SBX_MAX_DS18B20_SAMPLES];
+    struct sbx_msg_ds18b20_sample_t samples[CFFI_DOTDOTDOT_or(SBX_MAX_DS18B20_SAMPLES)];
+    CFFI_DOTDOTDOT
 };
 
-struct COMM_PACKED sbx_msg_noise_t
-{
+struct COMM_PACKED sbx_msg_noise_t {
     /**
      * Timestamp of the *last* sensor value.
      */
@@ -95,11 +116,11 @@ struct COMM_PACKED sbx_msg_noise_t
     /**
      * Raw 16 bit sensor values
      */
-    uint16_t samples[SBX_NOISE_SAMPLES];
+    uint16_t samples[CFFI_DOTDOTDOT_or(SBX_NOISE_SAMPLES)];
+    CFFI_DOTDOTDOT
 };
 
-struct COMM_PACKED sbx_msg_light_sample_t
-{
+struct COMM_PACKED sbx_msg_light_sample_t {
     /**
      * Timestamp at which the first channel was sampled.
      *
@@ -113,25 +134,22 @@ struct COMM_PACKED sbx_msg_light_sample_t
     uint16_t ch[4];
 };
 
-struct COMM_PACKED sbx_msg_light_t
-{
+struct COMM_PACKED sbx_msg_light_t {
     /**
      * Array containing the samples.
      *
      * Six samples are safe even with encryption and provide a reasonable update
      * interval.
      */
-    sbx_msg_light_sample_t samples[6];
+    struct sbx_msg_light_sample_t samples[6];
 };
 
-struct COMM_PACKED sbx_msg_hello_t
-{
+struct COMM_PACKED sbx_msg_hello_t {
     sbx_rtc_t rtc;
     sbx_uptime_t uptime;
 };
 
-struct COMM_PACKED sbx_msg_status_t
-{
+struct COMM_PACKED sbx_msg_status_t {
     sbx_rtc_t rtc;
     sbx_uptime_t uptime;
 
@@ -162,44 +180,34 @@ struct COMM_PACKED sbx_msg_status_t
     } core_status;
 };
 
-struct COMM_PACKED sbx_msg_dht11_t
-{
+struct COMM_PACKED sbx_msg_dht11_t {
     sbx_uptime_t timestamp;
     uint16_t humidity;
     uint16_t temperature;
 };
 
-struct COMM_PACKED sbx_msg_ping_t
-{
-
+union COMM_PACKED _sbx_msg_payload_t {
+    struct sbx_msg_hello_t hello;
+    struct sbx_msg_status_t status;
+    struct sbx_msg_sensor_stream_t sensor_stream;
+    struct sbx_msg_ds18b20_t ds18b20;
+    struct sbx_msg_dht11_t dht11;
+    struct sbx_msg_noise_t noise;
+    struct sbx_msg_light_t light;
 };
 
-struct COMM_PACKED sbx_msg_pong_t
-{
-    sbx_uptime_t uptime;
+struct COMM_PACKED sbx_msg_t {
+    NOT_IN_C(sbx_msg_type) ONLY_IN_C(uint8_t) type;
+    union _sbx_msg_payload_t payload;
 };
 
-struct COMM_PACKED sbx_msg_t
-{
-    sbx_msg_type type;
-    union COMM_PACKED {
-        sbx_msg_ping_t ping;
 
-        sbx_msg_hello_t hello;
-        sbx_msg_pong_t pong;
-        sbx_msg_status_t status;
-        sbx_msg_sensor_stream_t sensor_stream;
-        sbx_msg_ds18b20_t ds18b20;
-        sbx_msg_dht11_t dht11;
-        sbx_msg_noise_t noise;
-        sbx_msg_light_t light;
-    } payload;
-};
 
+#ifdef __cplusplus
 namespace SENSOR_STREAM {
 
 static constexpr std::size_t MAX_PAYLOAD_SIZE =
-        ::MAX_FRAME_PAYLOAD_SIZE - sizeof(::sbx_msg_type);
+        MAX_FRAME_PAYLOAD_SIZE - sizeof(::sbx_msg_type);
 static constexpr std::size_t MAX_ENCODED_SAMPLE_BYTES =
         (MAX_PAYLOAD_SIZE - sizeof(::sbx_msg_sensor_stream_t));
 static constexpr std::size_t MAX_SAMPLES =
@@ -207,6 +215,13 @@ static constexpr std::size_t MAX_SAMPLES =
 static constexpr std::size_t MAX_BITMAP_SIZE = ((MAX_SAMPLES+7)/8);
 
 }
+
+#undef CONSTEXPR
+#endif
+
+#ifndef __cplusplus
+#undef sbx_msg_type
+#endif
 
 
 #endif // COMM_SBX_H
