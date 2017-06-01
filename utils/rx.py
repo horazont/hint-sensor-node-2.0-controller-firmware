@@ -71,12 +71,6 @@ StatusPacket = struct.Struct(
     "L"
     # uptime
     "H"
-    # rx errors, overruns, checksum errors, unknown frames, most allocated
-    "HHHHHH"
-    # tx non acked, retries, most allocated
-    "HHH"
-    # undervoltage
-    "B"
 )
 
 RecordedFrameHeader = struct.Struct(
@@ -310,34 +304,12 @@ def dump_noise_packet(packet):
 
 
 def dump_status_packet(packet):
-    (rtc, uptime,
-     rx_overruns, rx_errors, rx_checksum_errors, rx_unknown_frames,
-     rx_skipped_bytes, rx_most_allocated,
-     tx_non_acked, tx_retries, tx_most_allocated,
-     undervoltage) = StatusPacket.unpack(
+    (rtc, uptime,) = StatusPacket.unpack(
          packet[:StatusPacket.size]
      )
 
     print("--- BEGIN STATUS PACKET ---")
     print("time: rtc={}  uptime={}".format(rtc, uptime))
-    print(
-        "xbee rx: overruns={}  errors={}  chksum={}  unknown={}  skipped={}  mostalloc={}".format(
-            rx_overruns,
-            rx_errors,
-            rx_checksum_errors,
-            rx_unknown_frames,
-            rx_skipped_bytes,
-            rx_most_allocated,
-        )
-    )
-    print(
-        "xbee tx: non_acked={}  retries={}  mostalloc={}".format(
-            tx_non_acked,
-            tx_retries,
-            tx_most_allocated,
-        )
-    )
-    print("core: undervoltage={}".format(bool(undervoltage)))
     print("--- END STATUS PACKET ---")
 
 
