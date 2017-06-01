@@ -2,6 +2,8 @@
 
 #include <stm32f10x.h>
 
+#include <cstring>
+
 #include "i2clib.h"
 #include "notify.h"
 
@@ -100,8 +102,21 @@ void imu_timed_init()
 
 void imu_timed_configure(I2C &i2c)
 {
+    uint8_t buf[3];
     i2c.smbus_write(IMU_DEVICE_ADDRESS, 0x20, 2, &config_20[0]);
+    i2c.smbus_read(IMU_DEVICE_ADDRESS, 0x20, 2, &buf[0]);
+
+    if (memcmp(&buf[0], &config_20[0], 2) != 0) {
+        __asm__ volatile ("bkpt #01"); // failed to configure IMU
+    }
+
     i2c.smbus_write(IMU_DEVICE_ADDRESS, 0x24, 3, &config_24[0]);
+    i2c.smbus_read(IMU_DEVICE_ADDRESS, 0x24, 3, &buf[0]);
+
+    if (memcmp(&buf[0], &config_24[0], 3) != 0) {
+        __asm__ volatile ("bkpt #01"); // failed to configure IMU
+    }
+
 }
 
 
