@@ -169,10 +169,13 @@ void I2C::_prep_smbus_read(const uint8_t device_address,
     m_curr_task.state = I2C_STATE_SELECT_REGISTER;
     m_curr_task.notify.reset();
 
-    m_rx_dma->CCR &= ~DMA_CCR1_EN;
-    m_rx_dma->CMAR = (uint32_t)buf;
-    m_rx_dma->CNDTR = nbytes;
-    m_rx_dma->CCR |= DMA_CCR1_EN;
+    if (nbytes > 1) {
+        // we don’t use DMA for transfers of 1 byte or less
+        m_rx_dma->CCR &= ~DMA_CCR1_EN;
+        m_rx_dma->CMAR = (uint32_t)buf;
+        m_rx_dma->CNDTR = nbytes;
+        m_rx_dma->CCR |= DMA_CCR1_EN;
+    }
 
     m_i2c->CR2 = (m_i2c->CR2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN;
     m_i2c->CR1 |= I2C_CR1_START;
@@ -282,11 +285,17 @@ static inline void ev_irq_handler()
         // find out whether we were about to send or to receive
         const uint8_t sr2 = i2c->SR2;
         if (!(sr2 & I2C_SR2_TRA)) {
-//            USART2->DR = 'R';
-            // receiver mode
-            // fire up DMA mode
-            const uint8_t cr2 = i2c->CR2;
-            i2c->CR2 = (cr2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_DMAEN | I2C_CR2_LAST;
+            if (curr_task.nbytes > 1) {
+//                USART2->DR = 'R';
+                // receiver mode
+                // fire up DMA mode
+                const uint8_t cr2 = i2c->CR2;
+                i2c->CR2 = (cr2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_DMAEN | I2C_CR2_LAST;
+            } else {
+//                USART2->DR = '1';
+                const uint8_t cr1 = i2c->CR1;
+                i2c->CR1 = (cr1 & ~I2C_CR1_ACK) | I2C_CR1_STOP;
+            }
         }
     } else if (sr1 & I2C_SR1_TXE) {
         if (curr_task.state == I2C::I2C_STATE_SELECT_REGISTER) {
@@ -312,7 +321,14 @@ static inline void ev_irq_handler()
             curr_task.notify.trigger();
         }
     } else if (sr1 & I2C_SR1_RXNE) {
-        __ASM volatile("bkpt #06");
+        if (curr_task.nbytes == 1) {
+            // USART2->DR = '<';
+            curr_task.nbytes = 0;
+            curr_task.buf.w[0] = i2c->DR;
+            curr_task.notify.trigger();
+        } else {
+            __asm__ volatile ("bkpt #06");
+        }
     } else if (sr1 & I2C_SR1_BTF) {
 //        USART2->DR = 'f';
     }
