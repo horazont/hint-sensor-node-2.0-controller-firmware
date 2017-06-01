@@ -345,6 +345,8 @@ static inline void er_irq_handler()
         USART2->DR = 'P';
     } else if (sr1 & I2C_SR1_SMBALERT) {
         USART2->DR = 'S';
+    } else if (sr1 & I2C_SR1_ARLO) {
+        USART2->DR = 'l';
     } else {
         USART2->DR = nybble_to_hex(sr1 >> 8);
     }
