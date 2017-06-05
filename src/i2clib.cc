@@ -155,6 +155,15 @@ void I2C::disable()
     m_i2c->CR1 &= ~I2C_CR1_PE;
 }
 
+void I2C::crude_hack()
+{
+    short_delay();
+    disable();
+    init();
+    enable();
+    short_delay();
+}
+
 void I2C::_prep_smbus_read(const uint8_t device_address,
                            const uint8_t register_address,
                            const uint8_t nbytes,
@@ -281,6 +290,12 @@ static inline void ev_irq_handler()
     if (sr1 & I2C_SR1_SB) {
 //        USART2->DR = 's';
         // start generated
+        if (curr_task.nbytes == 0) {
+            const uint16_t cr1 = i2c->CR1;
+            i2c->DR = 0x00;
+            i2c->CR1 = (cr1 & ~I2C_CR1_START) | I2C_CR1_STOP;
+            return;
+        }
         if (curr_task.state == I2C::I2C_STATE_SELECT_REGISTER) {
             i2c->DR = curr_task.device_address << 1;
         } else {
@@ -302,9 +317,19 @@ static inline void ev_irq_handler()
                 i2c->CR2 = (cr2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_DMAEN | I2C_CR2_LAST;
             } else {
 //                USART2->DR = '1';
+                // we need to program NACK *before* the RXNE of the last byte,
+                // i.e. right now
                 const uint8_t cr1 = i2c->CR1;
                 i2c->CR1 = (cr1 & ~I2C_CR1_ACK) | I2C_CR1_STOP;
             }
+        }
+    } else if (sr1 & I2C_SR1_BTF) {
+        if (curr_task.write_task &&
+                curr_task.state == I2C::I2C_STATE_TRANSFER_DATA &&
+                curr_task.offset == curr_task.nbytes)
+        {
+            i2c->CR1 |= I2C_CR1_STOP;
+            curr_task.notify.trigger();
         }
     } else if (sr1 & I2C_SR1_TXE) {
         if (curr_task.state == I2C::I2C_STATE_SELECT_REGISTER) {
@@ -316,8 +341,8 @@ static inline void ev_irq_handler()
             if (curr_task.write_task) {
                 // continue in DMA mode
 //                USART2->DR = '|';
-                const uint8_t cr2 = i2c->CR2;
-                i2c->CR2 = (cr2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_DMAEN;
+                // const uint8_t cr2 = i2c->CR2;
+                // i2c->CR2 = (cr2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_DMAEN;
             } else {
                 // repeated start condition for the read part
                 i2c->CR1 |= I2C_CR1_START;
@@ -325,9 +350,12 @@ static inline void ev_irq_handler()
             }
             curr_task.state = I2C::I2C_STATE_TRANSFER_DATA;
         } else if (curr_task.write_task) {
-            // USART2->DR = 't';
-            i2c->CR1 |= I2C_CR1_STOP;
-            curr_task.notify.trigger();
+            if (curr_task.offset < curr_task.nbytes) {
+                // USART2->DR = 't';
+                /*i2c->CR1 |= I2C_CR1_STOP;
+                curr_task.notify.trigger();*/
+                i2c->DR = curr_task.buf.r[curr_task.offset++];
+            }
         }
     } else if (sr1 & I2C_SR1_RXNE) {
         if (curr_task.nbytes == 1) {
@@ -338,8 +366,6 @@ static inline void ev_irq_handler()
         } else {
             __asm__ volatile ("bkpt #06");
         }
-    } else if (sr1 & I2C_SR1_BTF) {
-//        USART2->DR = 'f';
     }
 }
 
@@ -357,6 +383,8 @@ static inline void er_irq_handler()
         USART2->DR = 'S';
     } else if (sr1 & I2C_SR1_ARLO) {
         USART2->DR = 'l';
+    } else if (sr1 & I2C_SR1_AF) {
+        __asm__ volatile ("bkpt #01"); // NACK received
     } else {
         USART2->DR = nybble_to_hex(sr1 >> 8);
     }

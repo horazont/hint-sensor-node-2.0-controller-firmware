@@ -18,6 +18,7 @@
 #include "onewire.h"
 #include "crc8.h"
 #include "adc.h"
+#include "bme280.h"
 
 #define STACK_TOP (void*)(0x20002000)
 
@@ -560,6 +561,61 @@ public:
 };
 
 
+class SampleBME280: public Coroutine
+{
+public:
+    explicit SampleBME280(CommInterfaceTX &tx):
+        m_tx(tx)
+    {
+
+    }
+
+private:
+    CommInterfaceTX &m_tx;
+    CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
+    sbx_msg_t *m_buf;
+    sched_clock::time_point m_last_wakeup;
+    uint8_t m_cfg;
+
+public:
+    void operator()()
+    {
+
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        while (1) {
+            m_last_wakeup = now;
+            do {
+                await(m_tx.buffer().any_buffer_free());
+                m_handle = m_tx.buffer().allocate(
+                            *(uint8_t**)&m_buf,
+                            sizeof(sbx_msg_type) + sizeof(sbx_msg_bme280_t)
+                            );
+            } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
+
+            m_buf->type = sbx_msg_type::SENSOR_BME280;
+
+            await(i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0x88, SBX_BME280_DIG88_SIZE, &m_buf->payload.bme280.dig88[0]));
+            await(i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0xe1, SBX_BME280_DIGE1_SIZE, &m_buf->payload.bme280.dige1[0]));
+
+            m_buf->payload.noise.timestamp = sched_clock::now_raw();
+
+            await(i2c2.smbus_readc(BME280_DEVICE_ADDRESS, BME280_DATA_START, SBX_BME280_READOUT_SIZE, &m_buf->payload.bme280.readout[0]));
+
+            m_tx.buffer().set_ready(m_handle);
+
+            await(sleep_c(10000, m_last_wakeup));
+        }
+        COROUTINE_END;
+    }
+
+};
+
+
+
 // static BlinkLED blink;
 static OnewireCore onewire(usart1);
 static CommInterfaceTX commtx(usart3);
@@ -574,6 +630,7 @@ static SampleLightsensor sample_lightsensor(commtx);
 static MiscTask misc(commtx);
 static SampleOneWire sample_onewire(onewire, commtx);
 static SampleADC sample_adc(commtx);
+static SampleBME280 sample_bme280(commtx);
 static Scheduler<13> scheduler;
 
 
@@ -746,6 +803,7 @@ int main() {
             | GPIO_CRL_CNF7_0;
 
     I2C1->CR1 = 0;
+    I2C2->CR1 = 0;
 
     usart1.init(115200);
     usart2.init(115200);
@@ -756,11 +814,15 @@ int main() {
     // stm32_rtc::init();
     adc_init();
     i2c1.init();
+    i2c2.init();
 
     i2c1.enable();
+    i2c2.enable();
+
     i2c1_workaround_reset();
 
     imu_timed_configure(i2c1);
+    bme280_configure(i2c2);
 
     usart1.enable();
     usart2.enable();
@@ -786,6 +848,7 @@ int main() {
     scheduler.add_task(&misc);
     scheduler.add_task(&sample_onewire);
     scheduler.add_task(&sample_adc);
+    scheduler.add_task(&sample_bme280);
 
     scheduler.run();
 

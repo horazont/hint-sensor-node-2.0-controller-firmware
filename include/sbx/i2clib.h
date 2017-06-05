@@ -65,6 +65,8 @@ public:
     void enable();
     void disable();
 
+    void crude_hack();
+
     bool is_busy();
 
     void smbus_read(const uint8_t device_address,

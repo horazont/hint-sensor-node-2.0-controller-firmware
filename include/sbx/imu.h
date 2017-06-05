@@ -28,12 +28,6 @@ struct imu_buffer_t
     std::array<imu_data_point_t, IMU_BUFFER_LENGTH> samples;
 };
 
-struct bme280_buffer_t
-{
-    sched_clock::time_point timestamp;
-    std::array<uint8_t, 8> data;
-};
-
 enum imu_source_t: uint8_t {
     IMU_SOURCE_ACCELEROMETER = 0,
     IMU_SOURCE_MAGNETOMETER = 1
@@ -41,14 +35,11 @@ enum imu_source_t: uint8_t {
 
 void imu_timed_init();
 void imu_timed_configure(I2C &i2c);
-void bme280_configure(I2C &i2c);
 void imu_timed_enable();
 
 ASYNC_CALLABLE imu_timed_full_buffer(
         const imu_buffer_t *&full_buffer,
         const imu_source_t source);
-
-ASYNC_CALLABLE bme280_read(bme280_buffer_t &dest);
 
 void imu_timed_get_state(imu_source_t source_type,
                          uint16_t &last_seq,

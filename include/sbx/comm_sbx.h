@@ -31,6 +31,10 @@
 #define enum enum class
 #endif
 
+#define SBX_BME280_DIG88_SIZE (26)
+#define SBX_BME280_DIGE1_SIZE (7)
+#define SBX_BME280_READOUT_SIZE (8)
+
 enum COMM_ENUM_PACKED sbx_msg_type NOT_IN_C(:std::uint8_t) {
     PING = 0x01,
 
@@ -41,6 +45,7 @@ enum COMM_ENUM_PACKED sbx_msg_type NOT_IN_C(:std::uint8_t) {
     SENSOR_NOISE = 0xf2,
     SENSOR_DHT = 0xf3,
     SENSOR_LIGHT = 0xf4,
+    SENSOR_BME280 = 0xf5,
     SENSOR_STREAM_ACCEL_X = 0xf8,
     SENSOR_STREAM_ACCEL_Y = 0xf9,
     SENSOR_STREAM_ACCEL_Z = 0xfa,
@@ -186,6 +191,13 @@ struct COMM_PACKED sbx_msg_dht11_t {
     uint16_t temperature;
 };
 
+struct COMM_PACKED sbx_msg_bme280_t {
+    sbx_uptime_t timestamp;
+    uint8_t dig88[SBX_BME280_DIG88_SIZE];
+    uint8_t dige1[SBX_BME280_DIGE1_SIZE];
+    uint8_t readout[SBX_BME280_READOUT_SIZE];
+};
+
 union COMM_PACKED _sbx_msg_payload_t {
     struct sbx_msg_hello_t hello;
     struct sbx_msg_status_t status;
@@ -194,6 +206,7 @@ union COMM_PACKED _sbx_msg_payload_t {
     struct sbx_msg_dht11_t dht11;
     struct sbx_msg_noise_t noise;
     struct sbx_msg_light_t light;
+    struct sbx_msg_bme280_t bme280;
 };
 
 struct COMM_PACKED sbx_msg_t {
