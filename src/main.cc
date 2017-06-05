@@ -769,49 +769,6 @@ int main() {
     ls_freq_enable();
     imu_timed_enable();
     stm32_clock::enable();
-
-    /*ADC1->CR1 = 0;
-    ADC1->CR2 = ADC_CR2_TSVREFE;
-    ADC1->SMPR1 = 0;
-    ADC1->SMPR2 = 0;
-    ADC1->SQR1 = 0
-            ;
-    ADC1->SQR2 = 0;
-    ADC1->SQR3 = 0
-            | ADC_SQR3_SQ1_2
-            | ADC_SQR3_SQ2_4
-            ;
-
-    ADC1->CR2 = ADC_CR2_ADON;
-
-    // give it a moment to settle
-    for (uint32_t i = 0; i < 10000; ++i) {
-        __asm__ volatile("nop");
-    }
-
-    ADC1->CR2 |= ADC_CR2_CAL;
-
-    // wait for calibration to finish
-    while (ADC1->CR2 & ADC_CR2_CAL);
-
-    ADC1->CR1 |= ADC_CR1_SCAN;
-
-    while (1) {
-        ADC1->CR2 |= ADC_CR2_ADON;
-        while (!(ADC1->SR & ADC_SR_EOC));
-
-        char buf[5];
-        buf[4] = '\n';
-        uint16_to_hex(ADC1->DR, buf);
-        usart2.send((const uint8_t*)buf, 5);
-
-        uint16_to_hex(ADC1->DR, buf);
-        usart2.send((const uint8_t*)buf, 5);
-
-        for (uint32_t i = 0; i < 1000000; ++i) {
-            __asm__ volatile("nop");
-        }
-    }*/
     // stm32_rtc::enable();
 
     // puts("bootup complete!\n");
