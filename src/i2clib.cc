@@ -380,6 +380,7 @@ void dma_tx_irq_handler()
 template <I2C *i2c_obj, uint32_t channel, uint32_t channel_shift>
 void dma_rx_irq_handler()
 {
+    I2C_TypeDef *const i2c = i2c_obj->m_i2c;
     I2C::i2c_task &curr_task = i2c_obj->m_curr_task;
     // for RX, I2C takes care of the STOP condition by itself
     const uint32_t flags = DMA1->ISR;
@@ -388,6 +389,7 @@ void dma_rx_irq_handler()
     } else if (flags & (DMA_ISR_TEIF1 << channel_shift)) {
         curr_task.notify.trigger();
     }
+    i2c->CR1 |= I2C_CR1_STOP;
     // clear all channel 7 interrupts
     DMA1->IFCR = (DMA_IFCR_CHTIF1 | DMA_IFCR_CGIF1 | DMA_IFCR_CTCIF1 | DMA_IFCR_CTEIF1) << channel_shift;
 }
