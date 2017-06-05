@@ -97,7 +97,7 @@ struct COMM_PACKED sbx_msg_ds18b20_sample_t
 };
 
 #define SBX_MAX_DS18B20_SAMPLES ((MAX_FRAME_PAYLOAD_SIZE-(sizeof(sbx_uptime_t)+sizeof(sbx_msg_type)))/sizeof(struct sbx_msg_ds18b20_sample_t))
-#define SBX_NOISE_SAMPLES (32)
+#define SBX_NOISE_SAMPLES (16)
 
 struct COMM_PACKED sbx_msg_ds18b20_t {
     /**
@@ -112,16 +112,20 @@ struct COMM_PACKED sbx_msg_ds18b20_t {
     CFFI_DOTDOTDOT
 };
 
-struct COMM_PACKED sbx_msg_noise_t {
+struct COMM_PACKED sbx_msg_noise_sample_t {
     /**
-     * Timestamp of the *last* sensor value.
+     * Timestamp of the sample.
      */
     sbx_uptime_t timestamp;
 
     /**
-     * Raw 16 bit sensor values
+     * Raw 16 bit sensor value
      */
-    uint16_t samples[CFFI_DOTDOTDOT_or(SBX_NOISE_SAMPLES)];
+    uint16_t value;
+};
+
+struct COMM_PACKED sbx_msg_noise_t {
+    struct sbx_msg_noise_sample_t samples[CFFI_DOTDOTDOT_or(SBX_NOISE_SAMPLES)];
     CFFI_DOTDOTDOT
 };
 

@@ -524,6 +524,7 @@ private:
     sbx_msg_t *m_buf;
     sched_clock::time_point m_last_wakeup;
     uint8_t m_sample;
+    uint16_t m_value_buf;
 
 public:
     void operator()()
@@ -547,11 +548,12 @@ public:
             for (m_sample = 0; m_sample < SBX_NOISE_SAMPLES; m_sample++) {
                 await(sleep_c(1000, m_last_wakeup));
                 m_last_wakeup = now;
-                await(adc_sample(4, m_buf->payload.noise.samples[m_sample]));
+                m_buf->payload.noise.samples[m_sample].timestamp = sched_clock::now_raw();
+                await(adc_sample(4, m_value_buf));
+                m_buf->payload.noise.samples[m_sample].value = m_value_buf;
             }
 
             m_buf->type = sbx_msg_type::SENSOR_NOISE;
-            m_buf->payload.noise.timestamp = sched_clock::now_raw();
 
             m_tx.buffer().set_ready(m_handle);
         }
@@ -575,7 +577,6 @@ private:
     CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
     sbx_msg_t *m_buf;
     sched_clock::time_point m_last_wakeup;
-    uint8_t m_cfg;
 
 public:
     void operator()()
@@ -601,13 +602,13 @@ public:
             await(i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0x88, SBX_BME280_DIG88_SIZE, &m_buf->payload.bme280.dig88[0]));
             await(i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0xe1, SBX_BME280_DIGE1_SIZE, &m_buf->payload.bme280.dige1[0]));
 
-            m_buf->payload.noise.timestamp = sched_clock::now_raw();
+            m_buf->payload.bme280.timestamp = sched_clock::now_raw();
 
             await(i2c2.smbus_readc(BME280_DEVICE_ADDRESS, BME280_DATA_START, SBX_BME280_READOUT_SIZE, &m_buf->payload.bme280.readout[0]));
 
             m_tx.buffer().set_ready(m_handle);
 
-            await(sleep_c(10000, m_last_wakeup));
+            await(sleep_c(5000, m_last_wakeup));
         }
         COROUTINE_END;
     }

@@ -53,14 +53,10 @@ DS18B20SensorSample = struct.Struct(
     "H"
 )
 
-NoiseSensor = struct.Struct(
+NoiseSensorSample = struct.Struct(
     "<"
     # time
     "H"
-)
-
-NoiseSensorSample = struct.Struct(
-    "<"
     # value
     "H"
 )
@@ -284,23 +280,20 @@ def dump_ds18b20_packet(packet):
 
 
 def dump_noise_packet(packet):
-    timestamp,  = NoiseSensor.unpack(
-        packet[:NoiseSensor.size]
-    )
-
-    packet = packet[NoiseSensor.size:]
-
     values = [
         NoiseSensorSample.unpack(
             packet[i*NoiseSensorSample.size:(i+1)*NoiseSensorSample.size]
-        )[0]
+        )
         for i in range(len(packet)//NoiseSensorSample.size)
     ]
 
-    print("noise (t_last={}): {}".format(
-        timestamp,
-        ", ".join("{:.1f}%".format((v/2**12)*100) for v in values)
-    ))
+    print("--- BEGIN NOISE PACKET ---")
+    for ts, value in values:
+        print("t={:>5d} v={:.1f}".format(
+            ts,
+            (value/2**12)*100
+        ))
+    print("--- END NOISE PACKET ---")
 
 
 def dump_status_packet(packet):
