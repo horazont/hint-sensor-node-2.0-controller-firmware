@@ -84,7 +84,7 @@ I2C::I2C(I2C_TypeDef *bus,
 
 void I2C::init()
 {
-    m_is_busy = false;
+    m_last_sr1 = 0;
 
     m_i2c->CR1 = I2C_CR1_SWRST;
     short_delay();
@@ -177,6 +177,8 @@ void I2C::_prep_smbus_read(const uint8_t device_address,
         m_rx_dma->CCR |= DMA_CCR1_EN;
     }
 
+    m_last_sr1 = 0xff;
+
     m_i2c->CR2 = (m_i2c->CR2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN;
     m_i2c->CR1 |= I2C_CR1_START;
 }
@@ -199,6 +201,8 @@ void I2C::_prep_smbus_write(const uint8_t device_address,
     m_tx_dma->CMAR = (uint32_t)buf;
     m_tx_dma->CNDTR = nbytes;
     m_tx_dma->CCR |= DMA_CCR1_EN;
+
+    m_last_sr1 = 0xff;
 
     m_i2c->CR2 = (m_i2c->CR2 & I2C_CR2_FREQ) | I2C_CR2_ITERREN | I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN;
     m_i2c->CR1 |= I2C_CR1_START;
@@ -269,6 +273,7 @@ static inline void ev_irq_handler()
     I2C_TypeDef *const i2c = i2c_obj->m_i2c;
     I2C::i2c_task &curr_task = i2c_obj->m_curr_task;
     const uint8_t sr1 = i2c->SR1;
+    i2c_obj->m_last_sr1 = sr1;
     if (sr1 & I2C_SR1_SB) {
 //        USART2->DR = 's';
         // start generated
@@ -339,6 +344,7 @@ static inline void er_irq_handler()
 {
     I2C_TypeDef *const i2c = i2c_obj->m_i2c;
     const uint16_t sr1 = i2c->SR1;
+    i2c_obj->m_last_sr1 = sr1;
     if (sr1 & I2C_SR1_TIMEOUT) {
         USART2->DR = 'T';
     } else if (sr1 & I2C_SR1_PECERR) {

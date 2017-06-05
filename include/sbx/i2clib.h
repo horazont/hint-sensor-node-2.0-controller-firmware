@@ -45,7 +45,7 @@ private:
     const IRQn_Type m_tx_dma_irq;
     const IRQn_Type m_rx_dma_irq;
     i2c_task m_curr_task;
-    volatile bool m_is_busy;
+    uint8_t m_last_sr1;
 
 private:
     static IRQn_Type get_ev_irqn(const I2C_TypeDef *const i2c);
