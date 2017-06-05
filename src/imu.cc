@@ -50,11 +50,20 @@ struct imu_source_data_t
 };
 
 static std::array<imu_source_data_t, 2> sources;
+static bme280_buffer_t *bme280_dest;
+static notifier_t bme280_notifier;
 static uint8_t ctr;
 
 static constexpr uint8_t IMU_DEVICE_ADDRESS = 0x1d;
 static constexpr uint8_t IMU_ACCEL_ADDRESS = 0x28;
 static constexpr uint8_t IMU_COMPASS_ADDRESS = 0x08;
+
+static constexpr uint8_t BME280_DEVICE_ADDRESS = 0x76;
+static constexpr uint8_t BME280_ID_REGISTER = 0xd0;
+static constexpr uint8_t BME280_CTRL_HUM_REGISTER = 0xf2;
+static constexpr uint8_t BME280_CTRL_MEAS_REGISTER = 0xf4;
+static constexpr uint8_t BME280_CONFIG_REGISTER = 0xf5;
+static constexpr uint8_t BME280_DATA_START = 0xf7;
 
 static const uint8_t config_20[] = {
     // at 0x20
@@ -133,6 +142,77 @@ ASYNC_CALLABLE imu_timed_full_buffer(
     return sources[source].wait_for_buffer(full_buffer);
 }
 
+ASYNC_CALLABLE bme280_read(bme280_buffer_t &dest)
+{
+    bme280_dest = &dest;
+    return bme280_notifier.ready_c();
+}
+
+
+static const uint8_t reg_config =
+        // to address 0xf5
+        0b0 |  // no SPI 3w mode
+        (0b001 << 2) |  // filter coefficient 2
+        (0b101 << 5)  // 1000 ms standby time
+        ;
+
+static const uint8_t reg_ctrl_hum =
+        // to address f2
+        0b010  // oversample humidity x2
+        ;
+
+static const uint8_t reg_ctrl_meas =
+        // to address f4
+        0b11 |  // normal mode
+        (0b101 << 2) |  // oversample pressure x16
+        (0b010 << 5)  // oversample temperature x2
+        ;
+
+void _configure_verified(I2C &i2c, const uint8_t reg_addr, uint8_t value)
+{
+    i2c.smbus_write(
+                BME280_DEVICE_ADDRESS,
+                reg_addr,
+                1,
+                &value
+                );
+
+    /*puts("\nwritten\n");
+    USART2->CR1 |= USART_CR1_TE;*/
+
+    uint8_t verification = 0;
+    i2c.smbus_read(BME280_DEVICE_ADDRESS, reg_addr, 1, &verification);
+
+    if (verification != value) {
+        __asm__ volatile("bkpt #01");  // BME280 configuration failed
+    }
+}
+
+
+void bme280_configure(I2C &i2c)
+{
+    uint8_t id = 0x00;
+    i2c.smbus_read(BME280_DEVICE_ADDRESS, BME280_ID_REGISTER, 1, &id);
+    if (id != 0x60) {
+        __asm__ volatile ("bkpt #01");  // BME280 does not reply with correct id
+    }
+    //puts("readback 1 ok\n");
+
+    i2c.smbus_read(BME280_DEVICE_ADDRESS, BME280_ID_REGISTER, 1, &id);
+    if (id != 0x60) {
+        __asm__ volatile ("bkpt #01");  // BME280 does not reply with correct id
+    }
+
+    /*puts("readback 2 ok\n");
+    USART2->CR1 |= USART_CR1_TE;*/
+
+    _configure_verified(i2c, BME280_CONFIG_REGISTER, reg_config);
+    _configure_verified(i2c, BME280_CTRL_HUM_REGISTER, reg_ctrl_hum);
+    _configure_verified(i2c, BME280_CTRL_MEAS_REGISTER, reg_ctrl_meas);
+}
+
+
+
 void imu_timed_get_state(imu_source_t source_type,
                          uint16_t &last_seq,
                          uint16_t &last_timestamp)
@@ -183,15 +263,29 @@ static inline void _sample_magnetometer()
 }
 
 
+static inline void _sample_bme280()
+{
+    if (!bme280_dest) {
+        return;
+    }
+
+    i2c1.smbus_read_a(BME280_DEVICE_ADDRESS, BME280_DATA_START,
+                      8, &bme280_dest->data[0]);
+    bme280_dest->timestamp = sched_clock::now();
+}
+
+
 void TIM4_IRQHandler()
 {
     TIM4->SR = 0;
 
     ctr += 1;
-    if (ctr == 128) {
+    if (ctr == 128 || ctr == 0) {
         // sample magnetometer
         _sample_magnetometer();
-        ctr = 0;
+    } else if (ctr == 64) {
+        // sample bme280
+        _sample_bme280();
     } else if (ctr & 1) {
         // sample accelerometer
         _sample_accelerometer();
