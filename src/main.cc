@@ -55,7 +55,7 @@ using CommInterfaceTX = CommESPTX;
 using CommInterfaceRX = CommESPRX;
 
 
-class BlinkLED: public Coroutine
+/*class BlinkLED: public Coroutine
 {
 public:
     void operator()()
@@ -74,7 +74,7 @@ public:
         }
         COROUTINE_END;
     }
-};
+};*/
 
 
 class SampleLightsensor: public Coroutine
@@ -560,7 +560,7 @@ public:
 };
 
 
-static BlinkLED blink;
+// static BlinkLED blink;
 static OnewireCore onewire(usart1);
 static CommInterfaceTX commtx(usart3);
 // static CommInterfaceRX commrx(usart3);
@@ -814,11 +814,11 @@ int main() {
     }*/
     // stm32_rtc::enable();
 
-    puts("bootup complete!\n");
+    // puts("bootup complete!\n");
 
     scheduler.add_task(&commtx);
     // scheduler.add_task(&commrx);
-    scheduler.add_task(&blink);
+    // scheduler.add_task(&blink);
     scheduler.add_task(&stream_ax, IMU_SOURCE_ACCELEROMETER, 0);
     scheduler.add_task(&stream_ay, IMU_SOURCE_ACCELEROMETER, 1);
     scheduler.add_task(&stream_az, IMU_SOURCE_ACCELEROMETER, 2);

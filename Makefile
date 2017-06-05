@@ -15,7 +15,7 @@ CPFLAGS = -Obinary
 ODFLAGS = -S
 
 c_sources = $(wildcard src/*.c)
-cxx_sources = $(filter-out comm_xbee.cc,$(wildcard src/*.cc))
+cxx_sources = $(filter-out lightsensor_freq.c,$(filter-out comm_xbee.cc,$(wildcard src/*.cc)))
 headers = $(wildcard include/sbx/*.h)
 obj_dir = .objs/
 c_objs = $(patsubst src/%.c,$(obj_dir)%.o,$(c_sources))
