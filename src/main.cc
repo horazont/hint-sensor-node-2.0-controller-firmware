@@ -471,6 +471,12 @@ private:
     uint16_t m_tmp_seq;
     uint16_t m_tmp_timestamp;
 
+    inline void copy_i2c_metrics(const I2C &i2c, unsigned i)
+    {
+        auto &src_metrics = i2c.metrics();
+        m_buf->payload.status.i2c_metrics[i].transaction_overruns = src_metrics.transaction_overruns;
+    }
+
 public:
     void operator()() {
     }
@@ -491,7 +497,7 @@ public:
             m_buf->payload.status.rtc = stm32_rtc::now_raw();
             m_buf->payload.status.uptime = sched_clock::now_raw();
             m_buf->payload.status.protocol_version = 0x01;
-            m_buf->payload.status.status_version = 0x01;
+            m_buf->payload.status.status_version = 0x02;
             imu_timed_get_state(
                         IMU_SOURCE_ACCELEROMETER,
                         m_tmp_seq,
@@ -506,7 +512,8 @@ public:
             m_buf->payload.status.imu.stream_state[1].timestamp = m_tmp_timestamp;
             m_buf->payload.status.imu.stream_state[0].period = 5;
             m_buf->payload.status.imu.stream_state[1].period = 64*5;
-            m_buf->payload.status.core_status.undervoltage_detected = 0;  // TODO
+            copy_i2c_metrics(i2c1, 0);
+            copy_i2c_metrics(i2c2, 1);
             m_tx.buffer().set_ready(m_handle);
 
             await(sleep_c(10000, m_last_wakeup));

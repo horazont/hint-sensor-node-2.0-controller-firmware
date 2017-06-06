@@ -184,9 +184,9 @@ struct COMM_PACKED sbx_msg_status_t {
         } stream_state[2];
     } imu;
 
-    struct {
-        uint8_t undervoltage_detected;
-    } core_status;
+    struct COMM_PACKED {
+        uint16_t transaction_overruns;
+    } i2c_metrics[2];
 };
 
 struct COMM_PACKED sbx_msg_dht11_t {
