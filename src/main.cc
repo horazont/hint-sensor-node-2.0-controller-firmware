@@ -517,7 +517,7 @@ public:
             m_buf->payload.status.uptime = sched_clock::now_raw();
             m_tx.buffer().set_ready(m_handle);
 
-            await(sleep_c(10000, m_last_wakeup));
+            await(sleep_c(1000, m_last_wakeup));
         }
         COROUTINE_END;
     }
