@@ -22,12 +22,8 @@ static const uint8_t reg_ctrl_meas =
 
 void _configure_verified(I2C &i2c, const uint8_t reg_addr, uint8_t value)
 {
-    i2c.smbus_write(
-                BME280_DEVICE_ADDRESS,
-                reg_addr,
-                1,
-                &value
-                );
+    i2c.smbus_write(BME280_DEVICE_ADDRESS, reg_addr, 1, &value);
+    // reset the I2C peripherial due to write weirdness
     i2c.crude_hack();
 
     uint8_t verification = 0;
