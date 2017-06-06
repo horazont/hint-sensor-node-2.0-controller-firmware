@@ -172,12 +172,12 @@ struct COMM_PACKED sbx_msg_status_t {
      */
     uint8_t status_version;
 
-    struct {
+    struct COMM_PACKED {
         /**
          * Current sequence numbers for the Accelerometer and Magnetometer sensor
          * streams.
          */
-        struct {
+        struct COMM_PACKED {
             uint16_t sequence_number;
             uint16_t timestamp;
             uint16_t period;

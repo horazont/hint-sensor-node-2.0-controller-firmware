@@ -468,6 +468,9 @@ private:
     CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
     sbx_msg_t *m_buf;
 
+    uint16_t m_tmp_seq;
+    uint16_t m_tmp_timestamp;
+
 public:
     void operator()() {
     }
@@ -491,12 +494,16 @@ public:
             m_buf->payload.status.status_version = 0x01;
             imu_timed_get_state(
                         IMU_SOURCE_ACCELEROMETER,
-                        m_buf->payload.status.imu.stream_state[0].sequence_number,
-                        m_buf->payload.status.imu.stream_state[0].timestamp);
+                        m_tmp_seq,
+                        m_tmp_timestamp);
+            m_buf->payload.status.imu.stream_state[0].sequence_number = m_tmp_seq;
+            m_buf->payload.status.imu.stream_state[0].timestamp = m_tmp_timestamp;
             imu_timed_get_state(
                         IMU_SOURCE_MAGNETOMETER,
-                        m_buf->payload.status.imu.stream_state[1].sequence_number,
-                        m_buf->payload.status.imu.stream_state[1].timestamp);
+                        m_tmp_seq,
+                        m_tmp_timestamp);
+            m_buf->payload.status.imu.stream_state[1].sequence_number = m_tmp_seq;
+            m_buf->payload.status.imu.stream_state[1].timestamp = m_tmp_timestamp;
             m_buf->payload.status.imu.stream_state[0].period = 5;
             m_buf->payload.status.imu.stream_state[1].period = 64*5;
             m_buf->payload.status.core_status.undervoltage_detected = 0;  // TODO
