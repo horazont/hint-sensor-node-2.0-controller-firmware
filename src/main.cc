@@ -494,8 +494,7 @@ public:
                             );
             } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
             m_buf->type = sbx_msg_type::STATUS;
-            m_buf->payload.status.rtc = stm32_rtc::now_raw();
-            m_buf->payload.status.uptime = sched_clock::now_raw();
+            m_buf->payload.status.rtc = 0xdeadbeef;
             m_buf->payload.status.protocol_version = 0x01;
             m_buf->payload.status.status_version = 0x02;
             imu_timed_get_state(
@@ -514,6 +513,8 @@ public:
             m_buf->payload.status.imu.stream_state[1].period = 64*5;
             copy_i2c_metrics(i2c1, 0);
             copy_i2c_metrics(i2c2, 1);
+
+            m_buf->payload.status.uptime = sched_clock::now_raw();
             m_tx.buffer().set_ready(m_handle);
 
             await(sleep_c(10000, m_last_wakeup));
