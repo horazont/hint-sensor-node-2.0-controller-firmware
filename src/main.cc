@@ -577,8 +577,57 @@ public:
 };
 
 
+class WaitFor: public Coroutine
+{
+private:
+    WakeupCondition m_waitee;
+    WakeupCondition m_timeout;
+    bool *m_timed_out;
+
+public:
+    void operator()(WakeupCondition waitee,
+                    uint16_t timeout,
+                    bool &timed_out)
+    {
+        m_waitee = waitee;
+        m_timeout = sleep_c(timeout);
+        m_timed_out = &timed_out;
+        *m_timed_out = false;
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        while (true) {
+            if (m_waitee.can_run_now(now)) {
+                *m_timed_out = false;
+                COROUTINE_RETURN;
+            }
+            if (m_timeout.can_run_now(now)) {
+                *m_timed_out = true;
+                COROUTINE_RETURN;
+            }
+            yield;
+        }
+        COROUTINE_END;
+    }
+
+};
+
+
 class SampleBME280: public Coroutine
 {
+public:
+    struct Metrics {
+        Metrics():
+            timeouts(0)
+        {
+
+        }
+
+        uint16_t timeouts;
+    };
+
 public:
     explicit SampleBME280(CommInterfaceTX &tx):
         m_tx(tx)
@@ -591,8 +640,17 @@ private:
     CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
     sbx_msg_t *m_buf;
     sched_clock::time_point m_last_wakeup;
+    WaitFor m_wait_for;
+    bool m_timed_out;
+
+    Metrics m_metrics;
 
 public:
+    inline const Metrics &metrics() const
+    {
+        return m_metrics;
+    }
+
     void operator()()
     {
 
@@ -613,12 +671,31 @@ public:
 
             m_buf->type = sbx_msg_type::SENSOR_BME280;
 
-            await(i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0x88, SBX_BME280_DIG88_SIZE, &m_buf->payload.bme280.dig88[0]));
-            await(i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0xe1, SBX_BME280_DIGE1_SIZE, &m_buf->payload.bme280.dige1[0]));
+            await_call(m_wait_for, i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0x88, SBX_BME280_DIG88_SIZE, &m_buf->payload.bme280.dig88[0]), 10, m_timed_out);
+            if (m_timed_out) {
+                m_metrics.timeouts += 1;
+                m_tx.buffer().release(m_handle);
+                await(sleep_c(5000, m_last_wakeup));
+                continue;
+            }
+
+            await_call(m_wait_for, i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0xe1, SBX_BME280_DIGE1_SIZE, &m_buf->payload.bme280.dige1[0]), 10, m_timed_out);
+            if (m_timed_out) {
+                m_metrics.timeouts += 1;
+                m_tx.buffer().release(m_handle);
+                await(sleep_c(5000, m_last_wakeup));
+                continue;
+            }
 
             m_buf->payload.bme280.timestamp = sched_clock::now_raw();
 
-            await(i2c2.smbus_readc(BME280_DEVICE_ADDRESS, BME280_DATA_START, SBX_BME280_READOUT_SIZE, &m_buf->payload.bme280.readout[0]));
+            await_call(m_wait_for, i2c2.smbus_readc(BME280_DEVICE_ADDRESS, BME280_DATA_START, SBX_BME280_READOUT_SIZE, &m_buf->payload.bme280.readout[0]), 10, m_timed_out);
+            if (m_timed_out) {
+                m_metrics.timeouts += 1;
+                m_tx.buffer().release(m_handle);
+                await(sleep_c(5000, m_last_wakeup));
+                continue;
+            }
 
             m_tx.buffer().set_ready(m_handle);
 

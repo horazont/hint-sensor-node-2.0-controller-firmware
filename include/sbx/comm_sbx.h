@@ -187,6 +187,10 @@ struct COMM_PACKED sbx_msg_status_t {
     struct COMM_PACKED {
         uint16_t transaction_overruns;
     } i2c_metrics[2];
+
+    struct COMM_PACKED {
+        uint16_t timeouts;
+    } bme280_metrics;
 };
 
 struct COMM_PACKED sbx_msg_dht11_t {
