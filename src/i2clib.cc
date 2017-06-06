@@ -85,6 +85,7 @@ I2C::I2C(I2C_TypeDef *bus,
 void I2C::init()
 {
     m_last_sr1 = 0;
+    m_busy = false;
 
     m_i2c->CR1 = I2C_CR1_SWRST;
     short_delay();
@@ -169,6 +170,11 @@ void I2C::_prep_smbus_read(const uint8_t device_address,
                            const uint8_t nbytes,
                            uint8_t *buf)
 {
+    if (m_busy) {
+        m_metrics.transaction_overruns++;
+    }
+    m_busy = true;
+
     m_curr_task.device_address = device_address;
     m_curr_task.write_task = false;
     m_curr_task.register_address = register_address;
@@ -199,6 +205,11 @@ void I2C::_prep_smbus_write(const uint8_t device_address,
                             const uint8_t nbytes,
                             const uint8_t *buf)
 {
+    if (m_busy) {
+        m_metrics.transaction_overruns++;
+    }
+    m_busy = true;
+
     m_curr_task.device_address = device_address;
     m_curr_task.write_task = true;
     m_curr_task.register_address = register_address;
@@ -329,7 +340,7 @@ static inline void ev_irq_handler()
                 curr_task.offset == curr_task.nbytes)
         {
             i2c->CR1 |= I2C_CR1_STOP;
-            curr_task.notify.trigger();
+            i2c_obj->finish();
         }
     } else if (sr1 & I2C_SR1_TXE) {
         if (curr_task.state == I2C::I2C_STATE_SELECT_REGISTER) {
@@ -362,7 +373,7 @@ static inline void ev_irq_handler()
             // USART2->DR = '<';
             curr_task.nbytes = 0;
             curr_task.buf.w[0] = i2c->DR;
-            curr_task.notify.trigger();
+            i2c_obj->finish();
         } else {
             __asm__ volatile ("bkpt #06");
         }
@@ -409,13 +420,12 @@ template <I2C *i2c_obj, uint32_t channel, uint32_t channel_shift>
 void dma_rx_irq_handler()
 {
     I2C_TypeDef *const i2c = i2c_obj->m_i2c;
-    I2C::i2c_task &curr_task = i2c_obj->m_curr_task;
     // for RX, I2C takes care of the STOP condition by itself
     const uint32_t flags = DMA1->ISR;
     if (flags & (DMA_ISR_TCIF1 << channel_shift)) {
-        curr_task.notify.trigger();
+        i2c_obj->finish();
     } else if (flags & (DMA_ISR_TEIF1 << channel_shift)) {
-        curr_task.notify.trigger();
+        i2c_obj->finish();
     }
     i2c->CR1 |= I2C_CR1_STOP;
     // clear all channel 7 interrupts
@@ -460,4 +470,10 @@ void DMA1_Channel6_IRQHandler()
 void DMA1_Channel7_IRQHandler()
 {
     dma_rx_irq_handler<&i2c1, (uint32_t)DMA1_Channel7, 24>();
+}
+
+I2C::Metrics::Metrics():
+    transaction_overruns(0)
+{
+
 }

@@ -11,6 +11,13 @@
 
 class I2C {
 public:
+    struct Metrics {
+        Metrics();
+
+        uint16_t transaction_overruns;
+    };
+
+public:
     I2C() = delete;
     explicit I2C(I2C_TypeDef *bus,
                  DMA_Channel_TypeDef *tx_dma,
@@ -46,10 +53,18 @@ private:
     const IRQn_Type m_rx_dma_irq;
     i2c_task m_curr_task;
     uint8_t m_last_sr1;
+    Metrics m_metrics;
+    bool m_busy;
 
 private:
     static IRQn_Type get_ev_irqn(const I2C_TypeDef *const i2c);
     static IRQn_Type get_er_irqn(const I2C_TypeDef *const i2c);
+
+    inline void finish()
+    {
+        m_curr_task.notify.trigger();
+        m_busy = false;
+    }
 
     void _prep_smbus_read(const uint8_t device_address,
                           const uint8_t register_address,
@@ -99,6 +114,11 @@ public:
                                const uint8_t nbytes,
                                uint8_t *buf);
 
+    inline const Metrics &metrics() const
+    {
+        return m_metrics;
+    }
+
     template <I2C *usart_obj>
     friend void ev_irq_handler();
     template <I2C *usart_obj>
@@ -107,7 +127,6 @@ public:
     friend void dma_tx_irq_handler();
     template <I2C *usart_obj, uint32_t channel, uint32_t channel_shift>
     friend void dma_rx_irq_handler();
-
 };
 
 void i2c1_workaround_reset();
