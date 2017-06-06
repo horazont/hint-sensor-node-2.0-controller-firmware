@@ -197,9 +197,10 @@ struct COMM_PACKED sbx_msg_dht11_t {
 
 struct COMM_PACKED sbx_msg_bme280_t {
     sbx_uptime_t timestamp;
-    uint8_t dig88[SBX_BME280_DIG88_SIZE];
-    uint8_t dige1[SBX_BME280_DIGE1_SIZE];
-    uint8_t readout[SBX_BME280_READOUT_SIZE];
+    uint8_t dig88[CFFI_DOTDOTDOT_or(SBX_BME280_DIG88_SIZE)];
+    uint8_t dige1[CFFI_DOTDOTDOT_or(SBX_BME280_DIGE1_SIZE)];
+    uint8_t readout[CFFI_DOTDOTDOT_or(SBX_BME280_READOUT_SIZE)];
+    CFFI_DOTDOTDOT
 };
 
 union COMM_PACKED _sbx_msg_payload_t {
