@@ -90,6 +90,21 @@ struct WakeupCondition
         result.type = WakeupCondition::NONE;
         return result;
     }
+
+    inline bool can_run_now(const sched_clock::time_point now) const
+    {
+        switch (type) {
+        case WakeupCondition::NONE:
+            return true;
+        case WakeupCondition::FINSIHED:
+            return false;
+        case WakeupCondition::TIMER:
+            return wakeup_at <= now;
+        case WakeupCondition::EVENT:
+            return *event_bits == 0;
+        }
+        return false;
+    }
 };
 
 class Coroutine

@@ -31,21 +31,6 @@ private:
         {
             return !coro || condition.type == WakeupCondition::FINSIHED;
         }
-
-        inline bool can_run_now(const sched_clock::time_point now) const
-        {
-            switch (condition.type) {
-            case WakeupCondition::NONE:
-                return true;
-            case WakeupCondition::FINSIHED:
-                return false;
-            case WakeupCondition::TIMER:
-                return condition.wakeup_at <= now;
-            case WakeupCondition::EVENT:
-                return *condition.event_bits == 0;
-            }
-            return false;
-        }
     };
 
     static bool timed_task_cmp(const Task *a, const Task *b)
@@ -93,7 +78,7 @@ public:
                  ++iter)
             {
                 Task &task = *iter;
-                if (!task.can_run_now(now)) {
+                if (!task.condition.can_run_now(now)) {
                     continue;
                 }
                 sched_clock::time_point wakeup_timestamp = now;
