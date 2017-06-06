@@ -10,6 +10,7 @@ class CommESPTX: public Coroutine
 {
 public:
     using buffer_t = CommBuffer<4096, MAX_FRAME_PAYLOAD_SIZE>;
+    static_assert(buffer_t::BUFFER_COUNT >= 16, "not enough buffers for smooth operation!");
 
 private:
     struct tx_info_t
