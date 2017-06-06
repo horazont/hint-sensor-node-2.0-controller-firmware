@@ -454,76 +454,6 @@ public:
 };
 
 
-class MiscTask: public Coroutine {
-public:
-    MiscTask(CommInterfaceTX &tx):
-        m_tx(tx)
-    {
-
-    }
-
-private:
-    CommInterfaceTX &m_tx;
-    sched_clock::time_point m_last_wakeup;
-    CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
-    sbx_msg_t *m_buf;
-
-    uint16_t m_tmp_seq;
-    uint16_t m_tmp_timestamp;
-
-    inline void copy_i2c_metrics(const I2C &i2c, unsigned i)
-    {
-        auto &src_metrics = i2c.metrics();
-        m_buf->payload.status.i2c_metrics[i].transaction_overruns = src_metrics.transaction_overruns;
-    }
-
-public:
-    void operator()() {
-    }
-
-    COROUTINE_DECL
-    {
-        COROUTINE_INIT;
-        while (1) {
-            m_last_wakeup = now;
-            do {
-                await(m_tx.buffer().any_buffer_free());
-                m_handle = m_tx.buffer().allocate(
-                            *(uint8_t**)&m_buf,
-                            sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t)
-                            );
-            } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
-            m_buf->type = sbx_msg_type::STATUS;
-            m_buf->payload.status.rtc = 0xdeadbeef;
-            m_buf->payload.status.protocol_version = 0x01;
-            m_buf->payload.status.status_version = 0x02;
-            imu_timed_get_state(
-                        IMU_SOURCE_ACCELEROMETER,
-                        m_tmp_seq,
-                        m_tmp_timestamp);
-            m_buf->payload.status.imu.stream_state[0].sequence_number = m_tmp_seq;
-            m_buf->payload.status.imu.stream_state[0].timestamp = m_tmp_timestamp;
-            imu_timed_get_state(
-                        IMU_SOURCE_MAGNETOMETER,
-                        m_tmp_seq,
-                        m_tmp_timestamp);
-            m_buf->payload.status.imu.stream_state[1].sequence_number = m_tmp_seq;
-            m_buf->payload.status.imu.stream_state[1].timestamp = m_tmp_timestamp;
-            m_buf->payload.status.imu.stream_state[0].period = 5;
-            m_buf->payload.status.imu.stream_state[1].period = 64*5;
-            copy_i2c_metrics(i2c1, 0);
-            copy_i2c_metrics(i2c2, 1);
-
-            m_buf->payload.status.uptime = sched_clock::now_raw();
-            m_tx.buffer().set_ready(m_handle);
-
-            await(sleep_c(1000, m_last_wakeup));
-        }
-        COROUTINE_END;
-    }
-};
-
-
 class SampleADC: public Coroutine
 {
 public:
@@ -708,6 +638,81 @@ public:
 };
 
 
+class MiscTask: public Coroutine {
+public:
+    MiscTask(CommInterfaceTX &tx, SampleBME280 &sample_bme280):
+        m_tx(tx),
+        m_sample_bme280(sample_bme280)
+    {
+
+    }
+
+private:
+    CommInterfaceTX &m_tx;
+    sched_clock::time_point m_last_wakeup;
+    CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
+    sbx_msg_t *m_buf;
+    SampleBME280 &m_sample_bme280;
+
+    uint16_t m_tmp_seq;
+    uint16_t m_tmp_timestamp;
+
+    inline void copy_i2c_metrics(const I2C &i2c, unsigned i)
+    {
+        auto &src_metrics = i2c.metrics();
+        m_buf->payload.status.i2c_metrics[i].transaction_overruns = src_metrics.transaction_overruns;
+    }
+
+public:
+    void operator()() {
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        while (1) {
+            m_last_wakeup = now;
+            do {
+                await(m_tx.buffer().any_buffer_free());
+                m_handle = m_tx.buffer().allocate(
+                            *(uint8_t**)&m_buf,
+                            sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t)
+                            );
+            } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
+            m_buf->type = sbx_msg_type::STATUS;
+            m_buf->payload.status.rtc = 0xdeadbeef;
+            m_buf->payload.status.protocol_version = 0x01;
+            m_buf->payload.status.status_version = 0x02;
+            imu_timed_get_state(
+                        IMU_SOURCE_ACCELEROMETER,
+                        m_tmp_seq,
+                        m_tmp_timestamp);
+            m_buf->payload.status.imu.stream_state[0].sequence_number = m_tmp_seq;
+            m_buf->payload.status.imu.stream_state[0].timestamp = m_tmp_timestamp;
+            imu_timed_get_state(
+                        IMU_SOURCE_MAGNETOMETER,
+                        m_tmp_seq,
+                        m_tmp_timestamp);
+            m_buf->payload.status.imu.stream_state[1].sequence_number = m_tmp_seq;
+            m_buf->payload.status.imu.stream_state[1].timestamp = m_tmp_timestamp;
+            m_buf->payload.status.imu.stream_state[0].period = 5;
+            m_buf->payload.status.imu.stream_state[1].period = 64*5;
+            copy_i2c_metrics(i2c1, 0);
+            copy_i2c_metrics(i2c2, 1);
+            {
+                auto &metrics = m_sample_bme280.metrics();
+                m_buf->payload.status.bme280_metrics.timeouts = metrics.timeouts;
+            }
+
+            m_buf->payload.status.uptime = sched_clock::now_raw();
+            m_tx.buffer().set_ready(m_handle);
+
+            await(sleep_c(1000, m_last_wakeup));
+        }
+        COROUTINE_END;
+    }
+};
+
 
 static BlinkLED blink;
 static OnewireCore onewire(usart1);
@@ -720,10 +725,10 @@ static IMUSensorStream stream_mx(commtx);
 static IMUSensorStream stream_my(commtx);
 static IMUSensorStream stream_mz(commtx);
 static SampleLightsensor sample_lightsensor(commtx);
-static MiscTask misc(commtx);
 static SampleOneWire sample_onewire(onewire, commtx);
 static SampleADC sample_adc(commtx);
 static SampleBME280 sample_bme280(commtx);
+static MiscTask misc(commtx, sample_bme280);
 static Scheduler<13> scheduler;
 
 
