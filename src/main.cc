@@ -900,6 +900,20 @@ int main() {
             | GPIO_CRL_CNF6_0
             | GPIO_CRL_CNF7_0;
 
+    NVIC_SetPriority(TIM4_IRQn, 0);
+    NVIC_SetPriority(SysTick_IRQn, 1);
+    NVIC_SetPriority(I2C1_EV_IRQn, 2);
+    NVIC_SetPriority(USART3_IRQn, 2);
+    NVIC_SetPriority(DMA1_Channel6_IRQn, 2);
+    NVIC_SetPriority(DMA1_Channel7_IRQn, 2);
+    NVIC_SetPriority(I2C2_EV_IRQn, 3);
+    NVIC_SetPriority(USART1_IRQn, 3);
+    NVIC_SetPriority(USART2_IRQn, 3);
+    NVIC_SetPriority(DMA1_Channel4_IRQn, 3);
+    NVIC_SetPriority(DMA1_Channel5_IRQn, 3);
+    NVIC_SetPriority(DMA1_Channel2_IRQn, 3);
+    NVIC_SetPriority(DMA1_Channel3_IRQn, 3);
+
     I2C1->CR1 = 0;
     I2C2->CR1 = 0;
 
