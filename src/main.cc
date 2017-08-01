@@ -826,8 +826,8 @@ int main() {
             | AFIO_MAPR_USART3_REMAP_PARTIALREMAP;
 
     GPIOA->CRL =
-            GPIO_CRL_CNF0_0
-            | GPIO_CRL_CNF1_0
+            GPIO_CRL_MODE0_1
+            | GPIO_CRL_MODE1_1
             | GPIO_CRL_MODE2_1 | GPIO_CRL_CNF2_1
             | GPIO_CRL_CNF3_0
             // noise level analogue in
@@ -881,8 +881,8 @@ int main() {
             | GPIO_CRH_MODE11_0 | GPIO_CRH_CNF11_1 | GPIO_CRH_CNF11_0
             | GPIO_CRH_CNF12_0
             | GPIO_CRH_CNF13_0
-            | GPIO_CRH_MODE14_1
-            | GPIO_CRH_MODE15_1;
+            | GPIO_CRH_CNF14_0
+            | GPIO_CRH_CNF15_0;
 
     GPIOC->CRH = 0
             // USART3 TX (remapped!)

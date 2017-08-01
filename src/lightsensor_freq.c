@@ -23,9 +23,6 @@ void ls_freq_init()
         | TIM_CCER_CC1E  // enable CC1
         ;
 
-    LS_FREQ_PIN_CR = (LS_FREQ_PIN_CR & ~LS_FREQ_PIN_CONFIG_MASK)
-        | LS_FREQ_PIN_CONFIG(CNF, 0);
-
     ls_freq_select_channel(0);
 }
 
@@ -45,5 +42,5 @@ void ls_freq_select_channel(uint8_t ch)
 {
     // clip
     ch = ch & 0x3;
-    GPIOB->ODR = (GPIOB->ODR & ~(GPIO_ODR_ODR14 | GPIO_ODR_ODR15)) | (ch << 14);
+    GPIOA->ODR = (GPIOA->ODR & ~(GPIO_ODR_ODR0 | GPIO_ODR_ODR1)) | (ch << 0);
 }
