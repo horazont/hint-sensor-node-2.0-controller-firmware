@@ -95,9 +95,10 @@ void imu_timed_init()
     TIM4->DIER = TIM_DIER_UIE;
 
     // 2.5ms period
-    TIM4->PSC = 1000;
-    // those fucking timer clocks are doubled!
-    TIM4->ARR = 180;
+    TIM4->PSC = 999;
+    // those fucking timer clocks are doubled! (but timers are on the slow
+    // bus, so after doubling they run with the CPU clock)
+    TIM4->ARR = 179;
 }
 
 
