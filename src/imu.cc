@@ -160,12 +160,12 @@ static inline void _sample_accelerometer()
 
     imu_buffer_t &buffer = source.buffer();
 
+    source.last_sample = sched_clock::now();
+    source.sample_seq += 1;
+
     i2c1.smbus_read_a(IMU_DEVICE_ADDRESS, IMU_ACCEL_ADDRESS,
                       3*sizeof(uint16_t),
                       (uint8_t*)&buffer.samples[source.offset++].vector[0]);
-
-    source.last_sample = sched_clock::now();
-    source.sample_seq += 1;
 }
 
 
@@ -179,12 +179,12 @@ static inline void _sample_magnetometer()
 
     imu_buffer_t &buffer = source.buffer();
 
+    source.last_sample = sched_clock::now();
+    source.sample_seq += 1;
+
     i2c1.smbus_read_a(IMU_DEVICE_ADDRESS, IMU_COMPASS_ADDRESS,
                       3*sizeof(uint16_t),
                       (uint8_t*)&buffer.samples[source.offset++].vector[0]);
-
-    source.last_sample = sched_clock::now();
-    source.sample_seq += 1;
 }
 
 
