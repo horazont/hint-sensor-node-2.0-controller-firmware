@@ -343,11 +343,11 @@ void USART3_IRQHandler()
 void DMA1_Channel2_IRQHandler()
 {
     // USART3 TX
-    dma_irq_tx_handler<&usart3, (uint32_t)DMA1_Channel2, 4>();
+    dma_irq_tx_handler<&usart3, DMA1_Channel2_BASE, 4>();
 }
 
 void DMA1_Channel3_IRQHandler()
 {
     // USART3 RX
-    dma_irq_rx_handler<&usart3, (uint32_t)DMA1_Channel3, 8>();
+    dma_irq_rx_handler<&usart3, DMA1_Channel3_BASE, 8>();
 }

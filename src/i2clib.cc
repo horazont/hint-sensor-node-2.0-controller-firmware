@@ -454,22 +454,22 @@ void I2C2_ER_IRQHandler()
 
 void DMA1_Channel4_IRQHandler()
 {
-    dma_tx_irq_handler<&i2c2, (uint32_t)DMA1_Channel4, 12>();
+    dma_tx_irq_handler<&i2c2, DMA1_Channel4_BASE, 12>();
 }
 
 void DMA1_Channel5_IRQHandler()
 {
-    dma_rx_irq_handler<&i2c2, (uint32_t)DMA1_Channel5, 16>();
+    dma_rx_irq_handler<&i2c2, DMA1_Channel5_BASE, 16>();
 }
 
 void DMA1_Channel6_IRQHandler()
 {
-    dma_tx_irq_handler<&i2c1, (uint32_t)DMA1_Channel6, 20>();
+    dma_tx_irq_handler<&i2c1, DMA1_Channel6_BASE, 20>();
 }
 
 void DMA1_Channel7_IRQHandler()
 {
-    dma_rx_irq_handler<&i2c1, (uint32_t)DMA1_Channel7, 24>();
+    dma_rx_irq_handler<&i2c1, DMA1_Channel7_BASE, 24>();
 }
 
 I2C::Metrics::Metrics():
