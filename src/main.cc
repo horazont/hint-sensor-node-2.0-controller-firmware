@@ -510,6 +510,11 @@ public:
 
 class SampleBME280: public Coroutine
 {
+private:
+    static constexpr std::uint8_t ninstances = 2;
+    static constexpr std::uint16_t sample_interval = 5000;
+    static constexpr std::uint16_t sleep_interval = sample_interval / ninstances;
+
 public:
     struct Metrics {
         Metrics():
@@ -542,19 +547,22 @@ private:
     bool m_timed_out;
     bool m_was_present;
     uint8_t m_detect_status;
+    uint8_t m_curr_instance;
+    uint8_t m_curr_address;
 
-    Metrics m_metrics;
+    std::array<Metrics, 2> m_metrics;
     BME280DetectAndConfigure m_detect_and_configure;
 
 public:
-    inline const Metrics &metrics() const
+    inline const Metrics &metrics(const uint8_t device_instance) const
     {
-        return m_metrics;
+        return m_metrics[device_instance];
     }
 
     void operator()()
     {
-        m_was_present = false;
+        m_curr_instance = 1;
+        m_curr_address = 0;
     }
 
     COROUTINE_DECL
@@ -563,15 +571,17 @@ public:
         while (1) {
             m_last_wakeup = now;
 
-            await_call(m_detect_and_configure, BME280_DEVICE_ADDRESS, m_detect_status, m_was_present);
-            m_metrics.configure_status = m_detect_status;
+            m_curr_instance ^= 1;
+            m_curr_address = BME280_DEVICE_ADDRESS_BASE | m_curr_instance;
+
+            m_was_present = (m_metrics[m_curr_instance].configure_status == BME280_OK);
+            await_call(m_detect_and_configure, m_curr_address, m_detect_status, m_was_present);
+            m_metrics[m_curr_instance].configure_status = m_detect_status;
             if (m_detect_status != BME280_OK) {
                 // do not loop tightly if BME280 not found
-                m_was_present = false;
-                await(sleep_c(5000, m_last_wakeup));
+                await(sleep_c(sleep_interval, m_last_wakeup));
                 continue;
             }
-            m_was_present = true;
 
             do {
                 await(m_tx.buffer().any_buffer_free());
@@ -582,36 +592,37 @@ public:
             } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
 
             m_buf->type = sbx_msg_type::SENSOR_BME280;
+            m_buf->payload.bme280.instance = m_curr_instance;
 
-            await_call(m_wait_for, i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0x88, SBX_BME280_DIG88_SIZE, &m_buf->payload.bme280.dig88[0]), 10, m_timed_out);
+            await_call(m_wait_for, i2c2.smbus_readc(m_curr_address, 0x88, SBX_BME280_DIG88_SIZE, &m_buf->payload.bme280.dig88[0]), 10, m_timed_out);
             if (m_timed_out) {
-                m_metrics.timeouts += 1;
+                m_metrics[m_curr_instance].timeouts += 1;
                 m_tx.buffer().release(m_handle);
-                await(sleep_c(5000, m_last_wakeup));
+                await(sleep_c(sleep_interval, m_last_wakeup));
                 continue;
             }
 
-            await_call(m_wait_for, i2c2.smbus_readc(BME280_DEVICE_ADDRESS, 0xe1, SBX_BME280_DIGE1_SIZE, &m_buf->payload.bme280.dige1[0]), 10, m_timed_out);
+            await_call(m_wait_for, i2c2.smbus_readc(m_curr_address, 0xe1, SBX_BME280_DIGE1_SIZE, &m_buf->payload.bme280.dige1[0]), 10, m_timed_out);
             if (m_timed_out) {
-                m_metrics.timeouts += 1;
+                m_metrics[m_curr_instance].timeouts += 1;
                 m_tx.buffer().release(m_handle);
-                await(sleep_c(5000, m_last_wakeup));
+                await(sleep_c(sleep_interval, m_last_wakeup));
                 continue;
             }
 
             m_buf->payload.bme280.timestamp = sched_clock::now_raw();
 
-            await_call(m_wait_for, i2c2.smbus_readc(BME280_DEVICE_ADDRESS, BME280_DATA_START, SBX_BME280_READOUT_SIZE, &m_buf->payload.bme280.readout[0]), 10, m_timed_out);
+            await_call(m_wait_for, i2c2.smbus_readc(m_curr_address, BME280_DATA_START, SBX_BME280_READOUT_SIZE, &m_buf->payload.bme280.readout[0]), 10, m_timed_out);
             if (m_timed_out) {
-                m_metrics.timeouts += 1;
+                m_metrics[m_curr_instance].timeouts += 1;
                 m_tx.buffer().release(m_handle);
-                await(sleep_c(5000, m_last_wakeup));
+                await(sleep_c(sleep_interval, m_last_wakeup));
                 continue;
             }
 
             m_tx.buffer().set_ready(m_handle);
 
-            await(sleep_c(5000, m_last_wakeup));
+            await(sleep_c(sleep_interval, m_last_wakeup));
         }
         COROUTINE_END;
     }
@@ -637,6 +648,7 @@ private:
 
     uint16_t m_tmp_seq;
     uint16_t m_tmp_timestamp;
+    uint8_t m_tmp_bme_instance;
 
     inline void copy_i2c_metrics(const I2C &i2c, unsigned i)
     {
@@ -663,7 +675,7 @@ public:
             m_buf->type = sbx_msg_type::STATUS;
             m_buf->payload.status.rtc = 0xdeadbeef;
             m_buf->payload.status.protocol_version = 0x01;
-            m_buf->payload.status.status_version = 0x03;
+            m_buf->payload.status.status_version = 0x04;
             imu_timed_get_state(
                         IMU_SOURCE_ACCELEROMETER,
                         m_tmp_seq,
@@ -680,10 +692,10 @@ public:
             m_buf->payload.status.imu.stream_state[1].period = 64*5;
             copy_i2c_metrics(i2c1, 0);
             copy_i2c_metrics(i2c2, 1);
-            {
-                auto &metrics = m_sample_bme280.metrics();
-                m_buf->payload.status.bme280_metrics.configure_status = metrics.configure_status;
-                m_buf->payload.status.bme280_metrics.timeouts = metrics.timeouts;
+            for (m_tmp_bme_instance = 0; m_tmp_bme_instance < 2; ++m_tmp_bme_instance) {
+                auto &metrics = m_sample_bme280.metrics(m_tmp_bme_instance);
+                m_buf->payload.status.bme280_metrics[m_tmp_bme_instance].configure_status = metrics.configure_status;
+                m_buf->payload.status.bme280_metrics[m_tmp_bme_instance].timeouts = metrics.timeouts;
             }
 
             m_buf->payload.status.uptime = sched_clock::now_raw();

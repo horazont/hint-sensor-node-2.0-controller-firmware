@@ -191,7 +191,7 @@ struct COMM_PACKED sbx_msg_status_t {
     struct COMM_PACKED {
         uint8_t configure_status;
         uint16_t timeouts;
-    } bme280_metrics;
+    } bme280_metrics[2];
 };
 
 struct COMM_PACKED sbx_msg_dht11_t {
@@ -202,6 +202,7 @@ struct COMM_PACKED sbx_msg_dht11_t {
 
 struct COMM_PACKED sbx_msg_bme280_t {
     sbx_uptime_t timestamp;
+    uint8_t instance;
     uint8_t dig88[CFFI_DOTDOTDOT_or(SBX_BME280_DIG88_SIZE)];
     uint8_t dige1[CFFI_DOTDOTDOT_or(SBX_BME280_DIGE1_SIZE)];
     uint8_t readout[CFFI_DOTDOTDOT_or(SBX_BME280_READOUT_SIZE)];

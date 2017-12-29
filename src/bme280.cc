@@ -22,25 +22,6 @@ static const uint8_t reg_ctrl_meas =
 
 static const uint16_t cfg_timeout = 10;
 
-bool _configure_verified(I2C &i2c,
-                         const uint8_t device_instance,
-                         const uint8_t reg_addr,
-                         uint8_t value)
-{
-    (void)device_instance;
-    i2c.smbus_write(BME280_DEVICE_ADDRESS,
-                    reg_addr, 1, &value);
-    // reset the I2C peripherial due to write weirdness
-    i2c.crude_hack();
-
-    uint8_t verification = 0;
-    i2c.smbus_read(BME280_DEVICE_ADDRESS,
-                   reg_addr, 1, &verification);
-
-    return verification == value;
-}
-
-
 
 COROUTINE_DEF(BME280VerifiedWrite)
 {
@@ -95,6 +76,10 @@ COROUTINE_DEF(BME280DetectAndConfigure)
 
         COROUTINE_RETURN;
     }
+    if (m_bus.last_err() != 0) {
+        *m_status = BME280_ERR_BUS_ERROR;
+        COROUTINE_RETURN;
+    }
     if (m_buf != 0x60) {
         *m_status = BME280_ERR_INVALID_ID;
         COROUTINE_RETURN;
@@ -121,28 +106,4 @@ COROUTINE_DEF(BME280DetectAndConfigure)
     }
 
     COROUTINE_END;
-}
-
-
-bool bme280_configure(I2C &i2c, uint8_t device_instance)
-{
-    uint8_t id = 0x00;
-    i2c.smbus_read(BME280_DEVICE_ADDRESS,
-                   BME280_ID_REGISTER, 1, &id);
-    if (id != 0x60) {
-        __asm__ volatile ("bkpt #01");  // BME280 does not reply with correct id
-    }
-
-    i2c.smbus_read(BME280_DEVICE_ADDRESS,
-                   BME280_ID_REGISTER, 1, &id);
-    if (id != 0x60) {
-        __asm__ volatile ("bkpt #01");  // BME280 does not reply with correct id
-    }
-
-    bool result = true;
-
-    result = result && _configure_verified(i2c, device_instance, BME280_CONFIG_REGISTER, reg_config);
-    result = result && _configure_verified(i2c, device_instance, BME280_CTRL_HUM_REGISTER, reg_ctrl_hum);
-    result = result && _configure_verified(i2c, device_instance, BME280_CTRL_MEAS_REGISTER, reg_ctrl_meas);
-    return result;
 }

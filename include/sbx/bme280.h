@@ -5,7 +5,7 @@
 
 #include "i2clib.h"
 
-static constexpr std::uint8_t BME280_DEVICE_ADDRESS = 0x76;
+static constexpr std::uint8_t BME280_DEVICE_ADDRESS_BASE = 0x76;
 static constexpr std::uint8_t BME280_ID_REGISTER = 0xd0;
 static constexpr std::uint8_t BME280_CTRL_HUM_REGISTER = 0xf2;
 static constexpr std::uint8_t BME280_CTRL_MEAS_REGISTER = 0xf4;
@@ -16,6 +16,7 @@ static constexpr std::uint8_t BME280_OK = 0x00;
 static constexpr std::uint8_t BME280_ERR_INVALID_ID = 0x01;
 static constexpr std::uint8_t BME280_ERR_CONFIG_VERIFY_FAILED = 0x02;
 static constexpr std::uint8_t BME280_ERR_TIMEOUT = 0x03;
+static constexpr std::uint8_t BME280_ERR_BUS_ERROR = 0x04;
 
 bool bme280_configure(I2C &i2c, uint8_t device_instance);
 

@@ -196,6 +196,7 @@ void I2C::_prep_smbus_read(const uint8_t device_address,
     }
 
     m_last_sr1 = 0xff;
+    m_last_err = 0x00;
 
     m_i2c->CR1 |= I2C_CR1_START;
 }
@@ -228,6 +229,7 @@ void I2C::_prep_smbus_write(const uint8_t device_address,
     m_tx_dma->CCR |= DMA_CCR1_EN;
 
     m_last_sr1 = 0xff;
+    m_last_err = 0x00;
 
     m_i2c->CR1 |= I2C_CR1_START;
 }
@@ -386,7 +388,9 @@ static inline void er_irq_handler()
     I2C_TypeDef *const i2c = i2c_obj->m_i2c;
     const uint16_t sr1 = i2c->SR1;
     i2c_obj->m_last_sr1 = sr1;
-    if (sr1 & I2C_SR1_TIMEOUT) {
+    i2c_obj->m_last_err = i2c_obj->m_last_sr1;
+    i2c_obj->finish();
+    /*if (sr1 & I2C_SR1_TIMEOUT) {
         USART2->DR = 'T';
     } else if (sr1 & I2C_SR1_PECERR) {
         USART2->DR = 'P';
@@ -398,7 +402,7 @@ static inline void er_irq_handler()
         __asm__ volatile ("bkpt #01"); // NACK received
     } else {
         USART2->DR = nybble_to_hex(sr1 >> 8);
-    }
+    }*/
     i2c->SR1 = 0;
     i2c->CR1 |= I2C_CR1_STOP;
 }

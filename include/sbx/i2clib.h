@@ -53,6 +53,7 @@ private:
     const IRQn_Type m_rx_dma_irq;
     i2c_task m_curr_task;
     uint8_t m_last_sr1;
+    uint8_t m_last_err;
     Metrics m_metrics;
     bool m_busy;
 
@@ -83,6 +84,10 @@ public:
     void crude_hack();
 
     bool is_busy();
+    inline uint8_t last_err() const
+    {
+        return m_last_err;
+    }
 
     void smbus_read(const uint8_t device_address,
                     const uint8_t register_address,
