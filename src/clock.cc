@@ -29,6 +29,14 @@ uint16_t stm32_clock::now_raw()
 void stm32_clock::init()
 {
     SysTick_Config(72000);
+    /*TIM1->CR1 = 0;
+    TIM1->CR2 = 0;
+    TIM1->SMCR = 0;
+    TIM1->DIER = 0;
+
+    // TIM1 runs at CPU clock speed
+    TIM1->PSC = 1000;
+    TIM1->ARR = 36000;*/
 }
 
 void stm32_clock::enable()

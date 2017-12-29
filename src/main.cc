@@ -508,60 +508,26 @@ public:
 };
 
 
-class WaitFor: public Coroutine
-{
-private:
-    WakeupCondition m_waitee;
-    WakeupCondition m_timeout;
-    bool *m_timed_out;
-
-public:
-    void operator()(WakeupCondition waitee,
-                    uint16_t timeout,
-                    bool &timed_out)
-    {
-        m_waitee = waitee;
-        m_timeout = sleep_c(timeout);
-        m_timed_out = &timed_out;
-        *m_timed_out = false;
-    }
-
-    COROUTINE_DECL
-    {
-        COROUTINE_INIT;
-        while (true) {
-            if (m_waitee.can_run_now(now)) {
-                *m_timed_out = false;
-                COROUTINE_RETURN;
-            }
-            if (m_timeout.can_run_now(now)) {
-                *m_timed_out = true;
-                COROUTINE_RETURN;
-            }
-            yield;
-        }
-        COROUTINE_END;
-    }
-
-};
-
-
 class SampleBME280: public Coroutine
 {
 public:
     struct Metrics {
         Metrics():
+            configure_status(0xff),
             timeouts(0)
         {
 
         }
 
+        uint8_t configure_status;
         uint16_t timeouts;
     };
 
 public:
-    explicit SampleBME280(CommInterfaceTX &tx):
-        m_tx(tx)
+    explicit SampleBME280(CommInterfaceTX &tx, I2C &bus):
+        m_tx(tx),
+        m_bus(bus),
+        m_detect_and_configure(bus)
     {
 
     }
@@ -569,12 +535,16 @@ public:
 private:
     CommInterfaceTX &m_tx;
     CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
+    I2C &m_bus;
     sbx_msg_t *m_buf;
     sched_clock::time_point m_last_wakeup;
     WaitFor m_wait_for;
     bool m_timed_out;
+    bool m_was_present;
+    uint8_t m_detect_status;
 
     Metrics m_metrics;
+    BME280DetectAndConfigure m_detect_and_configure;
 
 public:
     inline const Metrics &metrics() const
@@ -584,7 +554,7 @@ public:
 
     void operator()()
     {
-
+        m_was_present = false;
     }
 
     COROUTINE_DECL
@@ -592,6 +562,17 @@ public:
         COROUTINE_INIT;
         while (1) {
             m_last_wakeup = now;
+
+            await_call(m_detect_and_configure, BME280_DEVICE_ADDRESS, m_detect_status, m_was_present);
+            m_metrics.configure_status = m_detect_status;
+            if (m_detect_status != BME280_OK) {
+                // do not loop tightly if BME280 not found
+                m_was_present = false;
+                await(sleep_c(5000, m_last_wakeup));
+                continue;
+            }
+            m_was_present = true;
+
             do {
                 await(m_tx.buffer().any_buffer_free());
                 m_handle = m_tx.buffer().allocate(
@@ -682,7 +663,7 @@ public:
             m_buf->type = sbx_msg_type::STATUS;
             m_buf->payload.status.rtc = 0xdeadbeef;
             m_buf->payload.status.protocol_version = 0x01;
-            m_buf->payload.status.status_version = 0x02;
+            m_buf->payload.status.status_version = 0x03;
             imu_timed_get_state(
                         IMU_SOURCE_ACCELEROMETER,
                         m_tmp_seq,
@@ -701,6 +682,7 @@ public:
             copy_i2c_metrics(i2c2, 1);
             {
                 auto &metrics = m_sample_bme280.metrics();
+                m_buf->payload.status.bme280_metrics.configure_status = metrics.configure_status;
                 m_buf->payload.status.bme280_metrics.timeouts = metrics.timeouts;
             }
 
@@ -729,7 +711,7 @@ static IMUSensorStream stream_mz(commtx);
 static SampleLightsensor sample_lightsensor(commtx);
 static SampleOneWire sample_onewire(onewire, commtx);
 static SampleADC sample_adc(commtx);
-static SampleBME280 sample_bme280(commtx);
+static SampleBME280 sample_bme280(commtx, i2c2);
 static MiscTask misc(commtx, sample_bme280);
 static Scheduler<13> scheduler;
 
@@ -922,7 +904,6 @@ int main() {
     i2c1_workaround_reset();
 
     imu_timed_configure(i2c1);
-    bme280_configure(i2c2);
 
     usart1.enable();
     usart2.enable();

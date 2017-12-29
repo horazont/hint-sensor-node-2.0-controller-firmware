@@ -189,6 +189,7 @@ struct COMM_PACKED sbx_msg_status_t {
     } i2c_metrics[2];
 
     struct COMM_PACKED {
+        uint8_t configure_status;
         uint16_t timeouts;
     } bme280_metrics;
 };

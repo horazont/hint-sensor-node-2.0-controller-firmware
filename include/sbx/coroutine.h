@@ -129,4 +129,42 @@ public:
 WakeupCondition sleep_c(uint16_t ms);
 WakeupCondition sleep_c(uint16_t ms, sched_clock::time_point now);
 
+
+class WaitFor: public Coroutine
+{
+private:
+    WakeupCondition m_waitee;
+    WakeupCondition m_timeout;
+    bool *m_timed_out;
+
+public:
+    void operator()(WakeupCondition waitee,
+                    uint16_t timeout,
+                    bool &timed_out)
+    {
+        m_waitee = waitee;
+        m_timeout = sleep_c(timeout);
+        m_timed_out = &timed_out;
+        *m_timed_out = false;
+    }
+
+    COROUTINE_DECL
+    {
+        COROUTINE_INIT;
+        while (true) {
+            if (m_waitee.can_run_now(now)) {
+                *m_timed_out = false;
+                COROUTINE_RETURN;
+            }
+            if (m_timeout.can_run_now(now)) {
+                *m_timed_out = true;
+                COROUTINE_RETURN;
+            }
+            yield;
+        }
+        COROUTINE_END;
+    }
+
+};
+
 #endif
