@@ -29,6 +29,11 @@ struct wraparound_timepoint_t
         return *this;
     }
 
+    duration operator-(const wraparound_timepoint_t &other) const
+    {
+        return duration(m_d - other.m_d);
+    }
+
     inline wraparound_timepoint_t operator+(const duration &dur) const
     {
         wraparound_timepoint_t result = *this;

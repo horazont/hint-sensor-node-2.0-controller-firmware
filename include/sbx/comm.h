@@ -209,9 +209,14 @@ public:
         return m_any_buffer_free_notifier.ready_c();
     }
 
-    inline void fetch_stats_and_reset(uint16_t &most_allocated)
+    inline void fetch_stats_and_reset(
+            uint16_t &most_allocated,
+            uint16_t &current_allocated,
+            uint16_t &current_ready)
     {
         most_allocated = m_most_allocated;
+        current_allocated = m_buffers_allocated;
+        current_ready = m_buffers_ready;
         m_most_allocated = m_buffers_allocated;
     }
 

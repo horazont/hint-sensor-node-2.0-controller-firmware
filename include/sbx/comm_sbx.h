@@ -158,6 +158,10 @@ struct COMM_PACKED sbx_msg_hello_t {
     sbx_uptime_t uptime;
 };
 
+struct COMM_PACKED sbx_msg_status_task_t {
+    uint16_t cpu_ticks;
+};
+
 struct COMM_PACKED sbx_msg_status_t {
     sbx_rtc_t rtc;
     sbx_uptime_t uptime;
@@ -192,6 +196,18 @@ struct COMM_PACKED sbx_msg_status_t {
         uint8_t configure_status;
         uint16_t timeouts;
     } bme280_metrics[2];
+
+    struct COMM_PACKED {
+        struct COMM_PACKED {
+            uint16_t most_allocated;
+            uint16_t allocated;
+            uint16_t ready;
+            uint16_t total;
+        } buffers;
+    } tx;
+
+    uint8_t task_count;
+    struct sbx_msg_status_task_t task_metrics[0];
 };
 
 struct COMM_PACKED sbx_msg_dht11_t {

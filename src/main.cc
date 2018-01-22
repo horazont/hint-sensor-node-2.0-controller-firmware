@@ -24,6 +24,8 @@
 
 int main();
 
+static Scheduler<13> scheduler;
+
 extern "C" {
 
 void NMI_Handler()
@@ -669,13 +671,13 @@ public:
                 await(m_tx.buffer().any_buffer_free());
                 m_handle = m_tx.buffer().allocate(
                             *(uint8_t**)&m_buf,
-                            sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t)
+                            sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t) + sizeof(sbx_msg_status_task_t) * (scheduler.task_count() + 1)
                             );
             } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
             m_buf->type = sbx_msg_type::STATUS;
             m_buf->payload.status.rtc = 0xdeadbeef;
             m_buf->payload.status.protocol_version = 0x01;
-            m_buf->payload.status.status_version = 0x04;
+            m_buf->payload.status.status_version = 0x05;
             imu_timed_get_state(
                         IMU_SOURCE_ACCELEROMETER,
                         m_tmp_seq,
@@ -696,6 +698,28 @@ public:
                 auto &metrics = m_sample_bme280.metrics(m_tmp_bme_instance);
                 m_buf->payload.status.bme280_metrics[m_tmp_bme_instance].configure_status = metrics.configure_status;
                 m_buf->payload.status.bme280_metrics[m_tmp_bme_instance].timeouts = metrics.timeouts;
+            }
+
+            {
+                uint16_t most_allocated, current_allocated, current_ready;
+                m_tx.buffer().fetch_stats_and_reset(
+                            most_allocated,
+                            current_allocated,
+                            current_ready
+                            );
+                m_buf->payload.status.tx.buffers.most_allocated = most_allocated;
+                m_buf->payload.status.tx.buffers.allocated = current_allocated;
+                m_buf->payload.status.tx.buffers.ready = current_ready;
+                m_buf->payload.status.tx.buffers.total = m_tx.buffer().BUFFER_COUNT;
+            }
+
+            m_buf->payload.status.task_metrics[0].cpu_ticks = scheduler.idle_ticks();
+            {
+                const unsigned task_count = scheduler.task_count();
+                m_buf->payload.status.task_count = task_count;
+                for (unsigned i = 0; i < task_count; ++i) {
+                    m_buf->payload.status.task_metrics[i+1].cpu_ticks = scheduler.task_ticks(i);
+                }
             }
 
             m_buf->payload.status.uptime = sched_clock::now_raw();
@@ -725,7 +749,6 @@ static SampleOneWire sample_onewire(onewire, commtx);
 static SampleADC sample_adc(commtx);
 static SampleBME280 sample_bme280(commtx, i2c2);
 static MiscTask misc(commtx, sample_bme280);
-static Scheduler<13> scheduler;
 
 
 /*static void dump()
