@@ -256,6 +256,9 @@ static constexpr std::size_t MAX_SAMPLES =
         ((8*MAX_ENCODED_SAMPLE_BYTES)/9);
 static constexpr std::size_t MAX_BITMAP_SIZE = ((MAX_SAMPLES+7)/8);
 
+static_assert(sizeof(sbx_msg_t) < MAX_FRAME_PAYLOAD_SIZE,
+              "sbx_msg_t too large");
+
 }
 
 #undef CONSTEXPR
