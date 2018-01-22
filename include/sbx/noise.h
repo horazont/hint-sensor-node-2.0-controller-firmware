@@ -1,5 +1,5 @@
-#ifndef SBX_ADC_H
-#define SBX_ADC_H
+#ifndef SBX_NOISE_H
+#define SBX_NOISE_H
 
 #include <array>
 #include <cstdint>

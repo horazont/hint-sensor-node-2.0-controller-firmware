@@ -17,7 +17,7 @@
 #include "lightsensor_freq.h"
 #include "onewire.h"
 #include "crc8.h"
-#include "adc.h"
+#include "noise.h"
 #include "bme280.h"
 
 #define STACK_TOP (void*)(0x20002000)

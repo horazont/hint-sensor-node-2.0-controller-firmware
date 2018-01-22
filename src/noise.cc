@@ -1,4 +1,4 @@
-#include "adc.h"
+#include "noise.h"
 
 #include <stm32f10x.h>
 
