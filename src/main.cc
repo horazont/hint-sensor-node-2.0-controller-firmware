@@ -839,7 +839,6 @@ int main() {
         __asm__ volatile("nop");
     }
 
-
     // Remap USART3 RX/TX to other pins
     AFIO->MAPR = 0
             | AFIO_MAPR_USART3_REMAP_PARTIALREMAP;

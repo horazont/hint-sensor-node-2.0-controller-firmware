@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 void ADC1_2_IRQHandler();
+void TIM1_CC_IRQHandler();
 void DMA1_Channel1_IRQHandler();
 
 #ifdef __cplusplus
