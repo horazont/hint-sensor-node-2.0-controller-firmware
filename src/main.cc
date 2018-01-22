@@ -857,7 +857,6 @@ int main() {
     GPIOA->BSRR = GPIO_BSRR_BR5;
 
     GPIOA->CRH = 0
-            // TIM1_CH1, DHT recv
             | GPIO_CRH_CNF8_0
             // USART1 TX (in open-drain mode)
             | GPIO_CRH_MODE9_1 | GPIO_CRH_CNF9_1 | GPIO_CRH_CNF9_0
@@ -879,8 +878,7 @@ int main() {
             | GPIO_CRL_CNF2_0
             | GPIO_CRL_CNF3_0
             | GPIO_CRL_CNF4_0
-            // DHT send
-            | GPIO_CRL_MODE5_1 | GPIO_CRL_MODE5_0 | GPIO_CRL_CNF5_0
+            | GPIO_CRL_CNF5_0
             // I2C1 SCL
             | GPIO_CRL_MODE6_0 | GPIO_CRL_CNF6_1 | GPIO_CRL_CNF6_0
             // I2C1 SDA
