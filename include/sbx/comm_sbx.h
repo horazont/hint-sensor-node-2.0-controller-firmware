@@ -38,6 +38,8 @@
 enum COMM_ENUM_PACKED sbx_msg_type NOT_IN_C(:std::uint8_t) {
     PING = 0x01,
 
+    /* 0x40 -- 0x5f is reserved for ESP8266 messages */
+
     HELLO = 0x80,
     PONG = 0x81,
     STATUS = 0x82,
