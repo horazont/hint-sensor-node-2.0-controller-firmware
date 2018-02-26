@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <cstring>
+#include <tuple>
 
 #include <stm32f10x.h>
 
@@ -470,13 +471,57 @@ private:
     CommInterfaceTX::buffer_t::buffer_handle_t m_handle;
     sbx_msg_t *m_buf;
     sched_clock::time_point m_last_wakeup;
-    uint8_t m_sample;
-    uint16_t m_value_buf;
+    const noise_buffer_t *m_buffer;
+
+    /* fixed point 0.32 of the moving average */
+    uint32_t m_highpass_filter;
+    uint16_t m_batch_index;
+    uint8_t m_out_sample_index;
+
+    int16_t m_min, m_max;
+    // 8.24 accumulator
+    uint32_t m_sqsum_accum;
+
+    static constexpr uint8_t NBATCHES = 125;
+
+    /**
+     * @return 8.24 mean of squared samples,
+     *    0.16 minimum sample value,
+     *    0.16 maximum sample value
+     */
+    std::tuple<uint32_t, int16_t, int16_t> process_batch(
+            const noise_sample_array_t &samples)
+    {
+        uint32_t sqsum = 0;
+        int16_t min = INT16_MAX;
+        int16_t max = INT16_MIN;
+        for (unsigned i = 0; i < NOISE_BUFFER_LENGTH; ++i) {
+            const uint16_t raw_sample = samples[i];
+            m_highpass_filter =
+                    (m_highpass_filter - (m_highpass_filter >> 15)) +
+                    (raw_sample << 5);
+            // 3.12 signed fixed point
+            const int16_t filtered_sample =
+                    raw_sample -
+                    (m_highpass_filter >> 20);
+            // 8.24 fixed point
+            const uint32_t squared_sample =
+                    filtered_sample * filtered_sample;
+            sqsum += squared_sample;
+            min = (filtered_sample < min ? filtered_sample : min);
+            max = (filtered_sample > max ? filtered_sample : max);
+        }
+        return std::make_tuple(
+                    sqsum / NOISE_BUFFER_LENGTH,
+                    min << 4,
+                    max << 4
+                    );
+    }
 
 public:
     void operator()()
     {
-
+        m_highpass_filter = 2047 << 20;
     }
 
     COROUTINE_DECL
@@ -487,19 +532,47 @@ public:
             do {
                 await(m_tx.buffer().any_buffer_free());
                 m_handle = m_tx.buffer().allocate(
-                            *(uint8_t**)&m_buf,
+                            *(void**)&m_buf,
                             sizeof(sbx_msg_type) + sizeof(sbx_msg_noise_t)
                             );
             } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
 
-            for (m_sample = 0; m_sample < SBX_NOISE_SAMPLES; m_sample++) {
+            /* for (m_sample = 0; m_sample < SBX_NOISE_SAMPLES; m_sample++) {
                 await(sleep_c(1000, m_last_wakeup));
                 m_last_wakeup = now;
                 m_buf->payload.noise.samples[m_sample].timestamp = sched_clock::now_raw();
                 await(adc_sample(4, m_value_buf));
                 m_buf->payload.noise.samples[m_sample].value = m_value_buf;
-            }
+            } */
 
+            for (m_out_sample_index = 0;
+                 m_out_sample_index < SBX_NOISE_SAMPLES;
+                 ++m_out_sample_index)
+            {
+                m_buf->payload.noise.samples[m_out_sample_index].timestamp = now.raw();
+                m_sqsum_accum = 0;
+                m_min = INT16_MAX;
+                m_max = INT16_MIN;
+                for (m_batch_index = 0; m_batch_index < NBATCHES; ++m_batch_index) {
+                    await(noise_full_buffer(m_buffer));
+                    {
+                        uint32_t sqsum = 0;
+                        int16_t min = INT16_MAX;
+                        int16_t max = INT16_MIN;
+                        std::tie(sqsum, min, max) = process_batch(m_buffer->samples);
+                        m_min = (min < m_min ? min : m_min);
+                        m_max = (max > m_max ? max : m_max);
+                        m_sqsum_accum += sqsum;
+                    }
+                }
+                m_buf->payload.noise.samples[m_out_sample_index].sqavg =
+                        m_sqsum_accum;
+                m_buf->payload.noise.samples[m_out_sample_index].min =
+                        m_min;
+                m_buf->payload.noise.samples[m_out_sample_index].max =
+                        m_max;
+            }
+            m_buf->payload.noise.factor = NBATCHES;
             m_buf->type = sbx_msg_type::SENSOR_NOISE;
 
             m_tx.buffer().set_ready(m_handle);
@@ -926,7 +999,7 @@ int main() {
     imu_timed_init();
     stm32_clock::init();
     // stm32_rtc::init();
-    adc_init();
+    noise_init();
     i2c1.init();
     i2c2.init();
 
@@ -940,7 +1013,7 @@ int main() {
     usart1.enable();
     usart2.enable();
     usart3.enable();
-    adc_enable();
+    noise_enable();
     ls_freq_enable();
     imu_timed_enable();
     stm32_clock::enable();

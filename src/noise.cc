@@ -6,21 +6,23 @@
 #include "usart.h"
 
 
-static uint16_t *adc_dest = nullptr;
-static notifier_t adc_done_notify;
+static std::array<noise_buffer_t, 2> buffers;
+static std::array<notifier_t, 2> notifiers;
+static volatile uint8_t current_buffer;
+static uint16_t sample_seq;
 
-/*
- * Plan: sample ADC with 48kHz sample rate (if possible -- need to check)
- */
-
-
-void adc_init()
+void noise_init()
 {
-    const uint16_t period = 199;
+    current_buffer = 0;
+    sample_seq = 0;
+    buffers[current_buffer].first_sample = sample_seq;
+
+    const uint16_t period = 24;
 
     TIM1->CR1 = 0;
     TIM1->CR2 = 0;
-    TIM1->PSC = 35999;  // -> timer runs at 48kHz
+    // this sets it up s.t. the ADC fires with 32kHz sample rate
+    TIM1->PSC = 89;
     TIM1->ARR = period;
 
     TIM1->CR1 = 0;
@@ -50,6 +52,14 @@ void adc_init()
     ADC1->SQR3 = 0
             | ADC_SQR3_SQ1_2
             ;
+    ADC1->SMPR2 = 0
+            // sample ch 3 for 55.5 cycles
+            | ADC_SMPR2_SMP3_0 | ADC_SMPR2_SMP3_2
+            // sample ch 4 for 55.5 cycles
+            | ADC_SMPR2_SMP4_0 | ADC_SMPR2_SMP4_2
+            // sample ch 5 for 55.5 cycles
+            | ADC_SMPR2_SMP5_0 | ADC_SMPR2_SMP5_2
+            ;
 
     ADC1->CR2 = ADC_CR2_ADON;
 
@@ -62,6 +72,25 @@ void adc_init()
 
     // wait for calibration to finish
     while (ADC1->CR2 & ADC_CR2_CAL);
+
+    // prepare DMA
+    DMA1_Channel1->CCR &= ~DMA_CCR1_EN;
+    DMA1_Channel1->CCR = 0
+            // Medium Priority
+            | DMA_CCR1_PL_0
+            // Memory size 16 bits
+            | DMA_CCR1_MSIZE_0
+            // Peripherial size 16 bits
+            | DMA_CCR1_PSIZE_0
+            // Memory increment mode
+            | DMA_CCR1_MINC
+            // Read from peripherial
+            | 0
+            // Enable Transfer complete interrupt
+            | DMA_CCR1_TCIE
+            ;
+    DMA1_Channel1->CNDTR = NOISE_BUFFER_LENGTH;
+    DMA1_Channel1->CPAR = (uint32_t)&ADC1->DR;
 
     ADC1->CR1 = 0
             // enable End-of-Conversion Interrupt
@@ -76,39 +105,61 @@ void adc_init()
             | ADC_CR2_EXTTRIG
             // use TIM1_CH1 as trigger
             | 0 // | ADC_CR2_EXTSEL_0 | ADC_CR2_EXTSEL_1 | ADC_CR2_EXTSEL_2
+            // enable DMA
+            | ADC_CR2_DMA
             // start ADC
             | ADC_CR2_ADON
             ;
 }
 
-void adc_enable()
+static inline void setup_dma_buffers()
 {
+    DMA1_Channel1->CCR &= ~DMA_CCR1_EN;
+    DMA1_Channel1->CNDTR = NOISE_BUFFER_LENGTH;
+    DMA1_Channel1->CMAR = (uint32_t)&buffers[current_buffer].samples[0];
+    DMA1_Channel1->CCR |= DMA_CCR1_EN;
+}
+
+void noise_enable()
+{
+    setup_dma_buffers();
+
     TIM1->CR1 |= TIM_CR1_CEN;
-    NVIC_EnableIRQ(ADC1_2_IRQn);
-    adc_done_notify.reset();
+    NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 }
 
-ASYNC_CALLABLE adc_sample(const uint8_t channel, uint16_t &dest)
+ASYNC_CALLABLE noise_full_buffer(const noise_buffer_t *&full_buffer)
 {
-    (void)channel;
-    adc_dest = &dest;
-    return adc_done_notify.ready_c();
+    const uint_fast8_t curr_buffer = current_buffer;
+    full_buffer = &buffers[curr_buffer];
+    return notifiers[curr_buffer].ready_c();
 }
 
-void ADC1_2_IRQHandler()
+
+static inline void swap_buffers()
 {
-    const uint16_t sr = ADC1->SR;
-    if (sr & ADC_SR_EOC) {
-        // we must read DR unconditionally to clear EOC bit
-        const uint16_t dr = ADC1->DR;
-        if (adc_dest) {
-            *adc_dest = dr;
-            adc_done_notify.trigger();
-        }
-    }
+    const uint_fast8_t curr_buffer = current_buffer;
+    const uint_fast8_t next_buffer = curr_buffer ^ 1;
+    notifiers[curr_buffer].trigger();
+    notifiers[next_buffer].reset();
+    buffers[next_buffer].first_sample = sample_seq;
+    current_buffer = next_buffer;
+    sample_seq += 1;
 }
+
 
 void DMA1_Channel1_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_ADC_DMA);
+    const uint32_t isr = DMA1->ISR;
+    if (isr & DMA_ISR_TCIF1) {
+        DMA1->IFCR = DMA_IFCR_CTCIF1;
+        swap_buffers();
+        setup_dma_buffers();
+    } else {
+        // ?? clear all the interrupts
+        DMA1->IFCR = DMA_IFCR_CGIF1 | DMA_IFCR_CHTIF1 | DMA_IFCR_CTCIF1 |
+                DMA_IFCR_CTEIF1;
+    }
 
 }
