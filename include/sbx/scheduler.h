@@ -9,6 +9,7 @@
 #include <stm32f10x.h>
 
 #include "coroutine.h"
+#include "cpusample.h"
 
 extern std::atomic_flag sched_no_event_pending;
 
@@ -20,14 +21,14 @@ private:
     {
         Task():
             coro(nullptr),
-            cpu_ticks(0)
+            task_id(CPU_TASK_MAX)
         {
 
         }
 
         WakeupCondition condition;
         Coroutine *coro;
-        uint32_t cpu_ticks;
+        sbx_cpu_context_id task_id;
 
         inline bool is_dead() const
         {
@@ -46,8 +47,7 @@ private:
 public:
     Scheduler():
         m_tasks(),
-        m_tasks_end(m_tasks.begin()),
-        m_idle_ticks(0)
+        m_tasks_end(m_tasks.begin())
     {
 
     }
@@ -58,7 +58,6 @@ private:
 
     sched_clock::time_point m_prev;
     sched_clock::time_point m_curr;
-    uint16_t m_idle_ticks;
 
     uint16_t account_ticks() {
         m_prev = m_curr;
@@ -78,24 +77,14 @@ public:
         (*coro)(args...);
         task.coro = coro;
         task.condition.type = WakeupCondition::NONE;
+        task.task_id = sbx_cpu_context_id(CPU_TASK_BASE + (m_tasks_end - m_tasks.begin()) - 1);
         return true;
-    }
-
-    inline uint16_t idle_ticks() const {
-        return m_idle_ticks;
-    }
-
-    inline uint16_t task_ticks(const unsigned index) const {
-        return m_tasks[index].cpu_ticks;
-    }
-
-    inline unsigned task_count() const {
-        return m_tasks_end - m_tasks.begin();
     }
 
     void run()
     {
         m_prev = m_curr = sched_clock::now();
+        cpu_user scheduler(sbx_cpu_context_id::CPU_SCHED);
         while (1) {
             const sched_clock::time_point now = sched_clock::now();
 
@@ -111,14 +100,13 @@ public:
                 if (task.condition.type == WakeupCondition::TIMER) {
                     wakeup_timestamp = task.condition.wakeup_at;
                 }
-                m_idle_ticks += account_ticks();
+                cpu_user task_(task.task_id);
                 task.condition = task.coro->step(wakeup_timestamp);
-                task.cpu_ticks += account_ticks();
             }
 
             if (sched_no_event_pending.test_and_set()) {
                 // wait for next interrupt
-                m_idle_ticks += account_ticks();
+                cpu_user idle(sbx_cpu_context_id::CPU_IDLE);
                 __WFI();
             }
         }

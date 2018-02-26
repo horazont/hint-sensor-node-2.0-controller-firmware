@@ -2,6 +2,8 @@
 
 #include <stm32f10x.h>
 
+#include "cpusample.h"
+
 static volatile uint16_t m_now = 0;
 
 
@@ -14,6 +16,49 @@ static inline void _rtc_wait_for_write()
 void SysTick_Handler()
 {
     m_now += 1;
+#ifdef SAMPLE_CPU
+    static uint8_t sample_tick = 0;
+    static uint16_t sample_tick_rand = 18213;
+    // this switch makes us sample the current CPU task in intervals of 2-3-5-7,
+    // which together is another prime interval of 17ms. this should give us
+    // decent coverage of common task usage.
+    //
+    // overview of the timed things which happen, with their prime factors:
+    // - ADC sample period (no CPU involvement): 0.05ms
+    // - Accel sample period: 5ms (5)
+    // - ADC buffer fill: 12.8ms (2, 3; 13)
+    // - Accel buffer fill: 60ms (2, 3, 5)
+    // - Light sensor channel sample interval: 200ms (2, 5)
+    // - Compass sample period: 320ms (2, 5)
+    // - Status update: 487ms (487)
+    // - Light sensor sampling period: 1000ms (2, 5)
+    // - Compass buffer fill: 6400ms (2, 5)
+    // - BME280 sampling period: 2500ms (2, 5)
+    // - OneWire sampling period: 10000ms (2, 5)
+    //
+    // so while 2, 3 and 5 may not be very useful, 7 (and the overall period of
+    // 17) should give decent sampling
+    /* switch (sample_tick)
+    {
+    case 16:
+        sample_tick = 255;
+        // fall through
+    case 1:
+    case 4:
+    case 9:
+        cpu_user::acquire_sample();
+        // fall through
+    default:
+        sample_tick += 1;
+    };*/
+    if (sample_tick == 0) {
+        cpu_user::acquire_sample();
+        sample_tick_rand = sample_tick_rand * 5 + 3;
+        sample_tick = (sample_tick_rand >> 12) + 2;
+    } else {
+        sample_tick -= 1;
+    }
+#endif
 }
 
 stm32_clock::time_point stm32_clock::now()

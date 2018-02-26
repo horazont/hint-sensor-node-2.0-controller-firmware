@@ -438,41 +438,49 @@ void dma_rx_irq_handler()
 
 void I2C1_EV_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_I2C1);
     ev_irq_handler<&i2c1>();
 }
 
 void I2C1_ER_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_I2C1);
     er_irq_handler<&i2c1>();
 }
 
 void I2C2_EV_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_I2C2);
     ev_irq_handler<&i2c2>();
 }
 
 void I2C2_ER_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_I2C2);
     er_irq_handler<&i2c2>();
 }
 
 void DMA1_Channel4_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_I2C2_DMA);
     dma_tx_irq_handler<&i2c2, DMA1_Channel4_BASE, 12>();
 }
 
 void DMA1_Channel5_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_I2C2_DMA);
     dma_rx_irq_handler<&i2c2, DMA1_Channel5_BASE, 16>();
 }
 
 void DMA1_Channel6_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_I2C1_DMA);
     dma_tx_irq_handler<&i2c1, DMA1_Channel6_BASE, 20>();
 }
 
 void DMA1_Channel7_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_I2C1_DMA);
     dma_rx_irq_handler<&i2c1, DMA1_Channel7_BASE, 24>();
 }
 

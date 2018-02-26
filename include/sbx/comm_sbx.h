@@ -64,6 +64,26 @@ enum COMM_ENUM_PACKED sbx_msg_type NOT_IN_C(:std::uint8_t) {
 #endif
 
 
+enum COMM_ENUM_PACKED sbx_cpu_context_id NOT_IN_C(:std::uint8_t) {
+    CPU_IDLE = 0x00,
+    CPU_INTR_USART1 = 0x01,
+    CPU_INTR_USART2 = 0x02,
+    CPU_INTR_USART3 = 0x03,
+    CPU_INTR_I2C1 = 0x04,
+    CPU_INTR_I2C2 = 0x05,
+    CPU_INTR_ADC = 0x06,
+    CPU_SCHED = 0x08,
+    CPU_INTR_USART1_DMA = 0x09,
+    CPU_INTR_USART2_DMA = 0x0a,
+    CPU_INTR_USART3_DMA = 0x0b,
+    CPU_INTR_I2C1_DMA = 0x0c,
+    CPU_INTR_I2C2_DMA = 0x0d,
+    CPU_INTR_ADC_DMA = 0x0e,
+    CPU_TASK_BASE = 0x10,
+    CPU_TASK_MAX = 0x1f,
+};
+
+
 typedef uint16_t sbx_uptime_t;
 typedef uint32_t sbx_rtc_t;
 
@@ -162,10 +182,6 @@ struct COMM_PACKED sbx_msg_hello_t {
     sbx_uptime_t uptime;
 };
 
-struct COMM_PACKED sbx_msg_status_task_t {
-    uint16_t cpu_ticks;
-};
-
 struct COMM_PACKED sbx_msg_status_t {
     sbx_rtc_t rtc;
     sbx_uptime_t uptime;
@@ -210,8 +226,7 @@ struct COMM_PACKED sbx_msg_status_t {
         } buffers;
     } tx;
 
-    uint8_t task_count;
-    struct sbx_msg_status_task_t task_metrics[0];
+    uint16_t cpu_samples[0x20];
 };
 
 struct COMM_PACKED sbx_msg_dht11_t {
@@ -260,6 +275,8 @@ static constexpr std::size_t MAX_BITMAP_SIZE = ((MAX_SAMPLES+7)/8);
 
 static_assert(sizeof(sbx_msg_t) < MAX_FRAME_PAYLOAD_SIZE,
               "sbx_msg_t too large");
+static_assert(sizeof(sbx_msg_status_t::cpu_samples) == sizeof(std::uint16_t)*(CPU_TASK_MAX+1),
+              "incorrect size for cpu_samples array");
 
 }
 

@@ -743,14 +743,14 @@ public:
             do {
                 await(m_tx.buffer().any_buffer_free());
                 m_handle = m_tx.buffer().allocate(
-                            *(uint8_t**)&m_buf,
-                            sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t) + sizeof(sbx_msg_status_task_t) * (scheduler.task_count() + 1)
+                            *(void**)&m_buf,
+                            sizeof(sbx_msg_type) + sizeof(sbx_msg_status_t)
                             );
             } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
             m_buf->type = sbx_msg_type::STATUS;
             m_buf->payload.status.rtc = 0xdeadbeef;
             m_buf->payload.status.protocol_version = 0x01;
-            m_buf->payload.status.status_version = 0x05;
+            m_buf->payload.status.status_version = 0x06;
             imu_timed_get_state(
                         IMU_SOURCE_ACCELEROMETER,
                         m_tmp_seq,
@@ -786,14 +786,11 @@ public:
                 m_buf->payload.status.tx.buffers.total = m_tx.buffer().BUFFER_COUNT;
             }
 
-            m_buf->payload.status.task_metrics[0].cpu_ticks = scheduler.idle_ticks();
-            {
-                const unsigned task_count = scheduler.task_count();
-                m_buf->payload.status.task_count = task_count;
-                for (unsigned i = 0; i < task_count; ++i) {
-                    m_buf->payload.status.task_metrics[i+1].cpu_ticks = scheduler.task_ticks(i);
-                }
-            }
+#ifdef SAMPLE_CPU
+            memcpy(&m_buf->payload.status.cpu_samples[0],
+                    (const void*)&cpu_user::cpu_samples[0],
+                    cpu_user::cpu_samples_size);
+#endif
 
             m_buf->payload.status.uptime = sched_clock::now_raw();
             m_tx.buffer().set_ready(m_handle);
@@ -1021,20 +1018,19 @@ int main() {
 
     // puts("bootup complete!\n");
 
-    scheduler.add_task(&commtx);
-    // scheduler.add_task(&commrx);
-    scheduler.add_task(&blink);
-    scheduler.add_task(&stream_ax, IMU_SOURCE_ACCELEROMETER, 0);
-    scheduler.add_task(&stream_ay, IMU_SOURCE_ACCELEROMETER, 1);
-    scheduler.add_task(&stream_az, IMU_SOURCE_ACCELEROMETER, 2);
-    scheduler.add_task(&stream_mx, IMU_SOURCE_MAGNETOMETER, 0);
-    scheduler.add_task(&stream_my, IMU_SOURCE_MAGNETOMETER, 1);
-    scheduler.add_task(&stream_mz, IMU_SOURCE_MAGNETOMETER, 2);
-    scheduler.add_task(&sample_lightsensor);
-    scheduler.add_task(&misc);
-    scheduler.add_task(&sample_onewire);
-    scheduler.add_task(&sample_adc);
-    scheduler.add_task(&sample_bme280);
+    scheduler.add_task(&commtx);  // 0
+    scheduler.add_task(&blink);  // 1
+    scheduler.add_task(&stream_ax, IMU_SOURCE_ACCELEROMETER, 0);  // 2
+    scheduler.add_task(&stream_ay, IMU_SOURCE_ACCELEROMETER, 1);  // 3
+    scheduler.add_task(&stream_az, IMU_SOURCE_ACCELEROMETER, 2);  // 4
+    scheduler.add_task(&stream_mx, IMU_SOURCE_MAGNETOMETER, 0);  // 5
+    scheduler.add_task(&stream_my, IMU_SOURCE_MAGNETOMETER, 1);  // 6
+    scheduler.add_task(&stream_mz, IMU_SOURCE_MAGNETOMETER, 2);  // 7
+    scheduler.add_task(&sample_lightsensor);  // 8
+    scheduler.add_task(&misc);  // 9
+    scheduler.add_task(&sample_onewire);  // 10
+    scheduler.add_task(&sample_adc);  // 11
+    scheduler.add_task(&sample_bme280);  // 12
 
     scheduler.run();
 

@@ -327,27 +327,32 @@ static inline void dma_irq_rx_handler()
 
 void USART1_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_USART1);
     irq_handler<&usart1>();
 }
 
 void USART2_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_USART2);
     irq_handler<&usart2>();
 }
 
 void USART3_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_USART3);
     irq_handler<&usart3>();
 }
 
 void DMA1_Channel2_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_USART3_DMA);
     // USART3 TX
     dma_irq_tx_handler<&usart3, DMA1_Channel2_BASE, 4>();
 }
 
 void DMA1_Channel3_IRQHandler()
 {
+    cpu_user intr(CPU_INTR_USART3_DMA);
     // USART3 RX
     dma_irq_rx_handler<&usart3, DMA1_Channel3_BASE, 8>();
 }
