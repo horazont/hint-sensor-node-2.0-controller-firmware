@@ -393,8 +393,6 @@ public:
             await_call(m_core.detect_devices);
             if (m_core.detect_devices.status() != ONEWIRE_PRESENCE) {
                 // no devices? -> sleep 10s
-                m_byte = 0xff;
-                await(usart2.send_c(&m_byte, 1));
                 await(sleep_c(10000, m_last_wakeup));
                 continue;
             }
