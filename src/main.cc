@@ -114,7 +114,7 @@ public:
         while (1) {
             await(m_comm.buffer().any_buffer_free());
             m_out_buffer_handle = m_comm.buffer().allocate(
-                        *((uint8_t**)&m_out_buffer),
+                        *((void**)&m_out_buffer),
                         CommInterfaceTX::buffer_t::BUFFER_SIZE);
             if (m_out_buffer_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER) {
                 continue;
@@ -290,7 +290,7 @@ public:
             // wait for buffer to write into
             await(m_comm.buffer().any_buffer_free());
             m_out_buffer_handle = m_comm.buffer().allocate(
-                        *((uint8_t**)&m_out_buffer),
+                        *((void**)&m_out_buffer),
                         CommInterfaceTX::buffer_t::BUFFER_SIZE,
                         PRIO_NO_RETRIES);
             if (m_out_buffer_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER) {
@@ -414,7 +414,7 @@ public:
                         do {
                             await(m_tx.buffer().any_buffer_free());
                             m_handle = m_tx.buffer().allocate(
-                                        *(uint8_t**)&m_buf,
+                                        *(void**)&m_buf,
                                         sizeof(sbx_msg_type) + sizeof(sbx_msg_ds18b20_t)
                                         );
                         } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);
@@ -661,7 +661,7 @@ public:
             do {
                 await(m_tx.buffer().any_buffer_free());
                 m_handle = m_tx.buffer().allocate(
-                            *(uint8_t**)&m_buf,
+                            *(void**)&m_buf,
                             sizeof(sbx_msg_type) + sizeof(sbx_msg_bme280_t)
                             );
             } while (m_handle == CommInterfaceTX::buffer_t::INVALID_BUFFER);

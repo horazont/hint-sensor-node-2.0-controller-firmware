@@ -203,7 +203,7 @@ void CommESPRX::rx_data_cb(const uint8_t ch, const uint16_t sr)
             m_esp->m_interrupt_state.state = CommESPRX::RX_IDLE;
             break;
         }
-        uint8_t *buf;
+        void *buf;
         m_esp->m_interrupt_state.handle = m_esp->m_buffer.allocate(
                     buf,
                     m_esp->m_interrupt_state.length+1
@@ -215,7 +215,7 @@ void CommESPRX::rx_data_cb(const uint8_t ch, const uint16_t sr)
             break;
         }
 
-        m_esp->m_usart.recv_a(buf, m_esp->m_interrupt_state.length+1,
+        m_esp->m_usart.recv_a((uint8_t*)buf, m_esp->m_interrupt_state.length+1,
                                rx_done_cb);
         m_esp->m_interrupt_state.spurious_rxneie = false;
 

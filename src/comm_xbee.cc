@@ -204,7 +204,7 @@ void CommXBEERX::rx_data_cb(const uint8_t ch, const uint16_t sr)
         }
         uint8_t *buf;
         m_xbee->m_interrupt_state.handle = m_xbee->m_buffer.allocate(
-                    buf,
+                    *((void**)&buf),
                     m_xbee->m_interrupt_state.length+1
                     );
         if (m_xbee->m_interrupt_state.handle == buffer_t::INVALID_BUFFER) {
