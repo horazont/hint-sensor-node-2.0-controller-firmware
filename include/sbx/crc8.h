@@ -15,7 +15,7 @@ public:
     CRC8 &operator=(CRC8 &&src) = delete;
 
 private:
-    uint8_t m_poly;
+    const uint8_t m_poly;
     uint8_t m_crc;
 
 public:

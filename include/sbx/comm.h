@@ -79,7 +79,7 @@ private:
     }
 
     inline void allocate_buffer(buffer_handle_t i,
-                                uint8_t *&buf,
+                                void *&buf,
                                 const uint16_t length,
                                 const uint8_t flags)
     {
@@ -97,7 +97,7 @@ private:
     }
 
 public:
-    buffer_handle_t allocate(uint8_t *&buf, const uint16_t length = bytes_per_packet,
+    buffer_handle_t allocate(void *&buf, const uint16_t length = bytes_per_packet,
                              const uint8_t flags = 0)
     {
         if (m_buffers_allocated == BUFFER_COUNT) {

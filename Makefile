@@ -27,7 +27,7 @@ startup_file_obj = $(patsubst src/%.s,$(obj_dir)%.o,$(startup_file_src))
 
 all: test
 
-CFLAGS +=  -Wall -Wextra -Werror -I./include/sbx/ -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles -fwrapv -static
+CFLAGS +=  -Wall -Wextra -Werror -I./include/sbx/ -ggdb -mcpu=cortex-m3 -mthumb -nostartfiles -fwrapv -static -Os -Wno-error=strict-aliasing -flto
 
 include $(STM32SPL)/ST_STM32StdPeriph.mk
 
